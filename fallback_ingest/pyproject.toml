@@ -1,0 +1,10 @@
+[project]
+name = "fallback-ingest"
+version = "0.1.0"
+description = "Kafka-to-Snowflake batch relay for payment authorization events"
+requires-python = ">=3.11"
+dependencies = [
+    "confluent-kafka>=2.6.0",
+    "snowflake-connector-python[pandas]>=3.12.0",
+    "pandas>=2.2.0",
+]
