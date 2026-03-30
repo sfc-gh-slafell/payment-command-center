@@ -1,0 +1,55 @@
+version: 2
+
+models:
+  - name: dt_auth_enriched
+    description: "Enriched auth events with latency tier, value tier, and system decline flag. 7-day window."
+    columns:
+      - name: event_id
+        description: "Unique event identifier"
+        tests:
+          - not_null
+          - unique
+      - name: latency_tier
+        description: "Latency tier: FAST (<100ms), NORMAL (100-300ms), SLOW (300ms-1s), CRITICAL (>1s)"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["FAST", "NORMAL", "SLOW", "CRITICAL"]
+      - name: value_tier
+        description: "Transaction value tier: HIGH (>=1000), MEDIUM (100-1000), STANDARD (<100)"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["HIGH", "MEDIUM", "STANDARD"]
+      - name: is_system_decline
+        description: "True if decline was caused by infrastructure/system issues"
+
+  - name: dt_auth_hourly
+    description: "Hourly rollup for BI/ML use cases. Uses SUM/COUNT latency pattern for correct reaggregation."
+    columns:
+      - name: event_hour
+        description: "Hour bucket (truncated to HOUR)"
+        tests:
+          - not_null
+      - name: latency_sum_ms
+        description: "Sum of latency_ms for computing weighted averages downstream"
+      - name: latency_count
+        description: "Count of latency observations for computing weighted averages downstream"
+      - name: approval_rate
+        description: "Hourly approval rate as percentage"
+
+  - name: dt_auth_daily
+    description: "Daily rollup for BI/ML use cases. Includes p95/p99 latency percentiles."
+    columns:
+      - name: event_date
+        description: "Date bucket (truncated to DAY)"
+        tests:
+          - not_null
+      - name: p95_latency_ms
+        description: "95th percentile latency for the day"
+      - name: p99_latency_ms
+        description: "99th percentile latency for the day"
+      - name: unique_merchants
+        description: "Count of distinct merchant IDs in the day"
+      - name: unique_issuers
+        description: "Count of distinct issuer BINs in the day"

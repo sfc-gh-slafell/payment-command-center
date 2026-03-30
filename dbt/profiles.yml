@@ -1,0 +1,13 @@
+payment_command_center:
+  target: prod
+  outputs:
+    prod:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
+      role: PAYMENTS_ADMIN_ROLE
+      database: PAYMENTS_DB
+      warehouse: PAYMENTS_ADMIN_WH
+      schema: CURATED
+      threads: 4
