@@ -26,3 +26,34 @@ output "role_names" {
     ops    = snowflake_account_role.payments_ops.name
   }
 }
+
+# -----------------------------------------------------------------------------
+# Issue #2 outputs — warehouses, compute, stages
+# -----------------------------------------------------------------------------
+
+output "warehouse_names" {
+  description = "Map of warehouse logical names to Snowflake warehouse names"
+  value = {
+    interactive = "PAYMENTS_INTERACTIVE_WH"
+    refresh     = snowflake_warehouse.payments_refresh_wh.name
+    admin       = snowflake_warehouse.payments_admin_wh.name
+  }
+}
+
+output "compute_pool_name" {
+  description = "Name of the SPCS compute pool for the dashboard"
+  value       = "PAYMENTS_DASHBOARD_POOL"
+}
+
+output "stage_names" {
+  description = "Map of stage/repo logical names to Snowflake names"
+  value = {
+    specs_stage    = snowflake_stage_internal.specs.fully_qualified_name
+    image_repo     = "DASHBOARD_REPO"
+  }
+}
+
+output "resource_monitor_name" {
+  description = "Name of the payments resource monitor"
+  value       = snowflake_resource_monitor.payments_monitor.name
+}
