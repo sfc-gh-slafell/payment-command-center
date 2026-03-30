@@ -1,0 +1,27 @@
+{
+  "name": "auth-events-sink-payments",
+  "config": {
+    "connector.class": "com.snowflake.kafka.connector.SnowflakeStreamingSinkConnector",
+    "tasks.max": "24",
+    "topics": "payments.auth",
+
+    "snowflake.url.name": "${env:SNOWFLAKE_URL}",
+    "snowflake.user.name": "${env:SNOWFLAKE_USER}",
+    "snowflake.private.key": "${env:SNOWFLAKE_PRIVATE_KEY}",
+    "snowflake.database.name": "PAYMENTS_DB",
+    "snowflake.schema.name": "RAW",
+    "snowflake.role.name": "PAYMENTS_INGEST_ROLE",
+
+    "snowflake.topic2table.map": "payments.auth:AUTH_EVENTS_RAW",
+    "snowflake.metadata.topic": "true",
+    "snowflake.metadata.offsetAndPartition": "true",
+
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+
+    "errors.tolerance": "all",
+    "errors.log.enable": "true",
+    "errors.log.include.messages": "true"
+  }
+}
