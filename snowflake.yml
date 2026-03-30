@@ -1,0 +1,15 @@
+definition_version: "2"
+# Snowflake CLI connection definitions placeholder
+# See: https://docs.snowflake.com/en/developer-guide/snowflake-cli/connecting/specify-connections
+#
+# Configure connections in ~/.snowflake/connections.toml or override here.
+#
+# Example:
+#   snowflake:
+#     connections:
+#       default:
+#         account: "<account>"
+#         user: "<user>"
+#         role: "PAYMENTS_ADMIN_ROLE"
+#         warehouse: "PAYMENTS_ADMIN_WH"
+#         database: "PAYMENTS_DB"
