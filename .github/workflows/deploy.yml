@@ -1,0 +1,130 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+env:
+  SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+  SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+  SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/snowflake_key.p8
+  REGISTRY_HOST: ${{ secrets.SNOWFLAKE_REGISTRY_HOST }}
+
+jobs:
+  terraform-apply:
+    name: 1. Terraform Apply
+    runs-on: ubuntu-latest
+    env:
+      TF_VAR_snowflake_account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      TF_VAR_snowflake_user: ${{ secrets.SNOWFLAKE_USER }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > /tmp/snowflake_key.p8
+      - name: terraform init
+        run: terraform init
+        working-directory: terraform/
+      - name: terraform apply
+        run: terraform apply -auto-approve
+        working-directory: terraform/
+
+  schemachange-deploy:
+    name: 2. schemachange Deploy
+    runs-on: ubuntu-latest
+    needs: terraform-apply
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install schemachange
+      - run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > /tmp/snowflake_key.p8
+      - name: schemachange deploy
+        run: schemachange deploy
+        env:
+          SNOWFLAKE_PASSWORD: ""
+          SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/snowflake_key.p8
+
+  dbt-run:
+    name: 3. dbt Run + Test
+    runs-on: ubuntu-latest
+    needs: schemachange-deploy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install dbt-snowflake
+      - run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > /tmp/snowflake_key.p8
+      - name: dbt deps
+        run: dbt deps
+        working-directory: dbt
+      - name: dbt run
+        run: dbt run --profiles-dir .
+        working-directory: dbt
+      - name: dbt test
+        run: dbt test --profiles-dir .
+        working-directory: dbt
+
+  docker-push:
+    name: 4. Docker Build + Push to Registry
+    runs-on: ubuntu-latest
+    needs: terraform-apply
+    env:
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docker login to Snowflake registry
+        run: |
+          echo "${{ secrets.SNOWFLAKE_REGISTRY_PASSWORD }}" | \
+          docker login "${REGISTRY_HOST}" -u "${{ secrets.SNOWFLAKE_REGISTRY_USER }}" --password-stdin
+      - name: Build and push app image
+        run: |
+          docker build -f app/Dockerfile app/ \
+            -t "${REGISTRY_HOST}/payments_db/app/dashboard_repo/payment-command-center:${IMAGE_TAG}" \
+            -t "${REGISTRY_HOST}/payments_db/app/dashboard_repo/payment-command-center:latest"
+          docker push "${REGISTRY_HOST}/payments_db/app/dashboard_repo/payment-command-center:${IMAGE_TAG}"
+          docker push "${REGISTRY_HOST}/payments_db/app/dashboard_repo/payment-command-center:latest"
+      - name: Build and push generator image
+        run: |
+          docker build -f generator/Dockerfile generator/ \
+            -t "${REGISTRY_HOST}/payments_db/app/dashboard_repo/payment-generator:${IMAGE_TAG}" \
+            -t "${REGISTRY_HOST}/payments_db/app/dashboard_repo/payment-generator:latest"
+          docker push "${REGISTRY_HOST}/payments_db/app/dashboard_repo/payment-generator:${IMAGE_TAG}"
+          docker push "${REGISTRY_HOST}/payments_db/app/dashboard_repo/payment-generator:latest"
+
+  spcs-deploy:
+    name: 5. SPCS Service Deploy
+    runs-on: ubuntu-latest
+    needs: docker-push
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install snowflake-cli-labs
+      - run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > /tmp/snowflake_key.p8
+      - name: Deploy SPCS service
+        run: snow spcs service deploy
+        working-directory: spcs/
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/snowflake_key.p8
+
+  kafka-connector-deploy:
+    name: 6. Kafka Connector Deploy
+    runs-on: ubuntu-latest
+    needs: terraform-apply
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy HP connector
+        run: |
+          curl -f -X POST "${KAFKA_CONNECT_URL}/connectors" \
+            -H "Content-Type: application/json" \
+            -d @kafka-connect/shared.json
+        env:
+          KAFKA_CONNECT_URL: ${{ secrets.KAFKA_CONNECT_URL }}
+          SNOWFLAKE_URL: ${{ secrets.SNOWFLAKE_URL }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_BASE64 }}
