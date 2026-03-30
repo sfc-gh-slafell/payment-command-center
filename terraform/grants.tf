@@ -149,3 +149,86 @@ resource "snowflake_grant_privileges_to_account_role" "ops_schema_serve" {
     schema_name = snowflake_schema.serve.fully_qualified_name
   }
 }
+
+# =============================================================================
+# Warehouse USAGE grants (Issue #2)
+# Spec reference: Section 3.9.6
+#
+# Grant mapping:
+#   PAYMENTS_APP_ROLE     → USAGE on PAYMENTS_INTERACTIVE_WH + PAYMENTS_ADMIN_WH
+#   PAYMENTS_INGEST_ROLE  → no warehouse (HP connector is serverless)
+#   PAYMENTS_OPS_ROLE     → USAGE on PAYMENTS_ADMIN_WH
+#   PAYMENTS_ADMIN_ROLE   → USAGE + OPERATE on all warehouses
+# =============================================================================
+
+# --- PAYMENTS_APP_ROLE warehouse grants ---
+
+resource "snowflake_execute" "app_interactive_wh_usage" {
+  execute = "GRANT USAGE ON WAREHOUSE PAYMENTS_INTERACTIVE_WH TO ROLE ${snowflake_account_role.payments_app.name}"
+  revert  = "REVOKE USAGE ON WAREHOUSE PAYMENTS_INTERACTIVE_WH FROM ROLE ${snowflake_account_role.payments_app.name}"
+
+  depends_on = [snowflake_execute.payments_interactive_wh]
+}
+
+resource "snowflake_grant_privileges_to_account_role" "app_admin_wh_usage" {
+  account_role_name = snowflake_account_role.payments_app.name
+  privileges        = ["USAGE"]
+
+  on_account_object {
+    object_type = "WAREHOUSE"
+    object_name = snowflake_warehouse.payments_admin_wh.name
+  }
+}
+
+# --- PAYMENTS_OPS_ROLE warehouse grants ---
+
+resource "snowflake_grant_privileges_to_account_role" "ops_admin_wh_usage" {
+  account_role_name = snowflake_account_role.payments_ops.name
+  privileges        = ["USAGE"]
+
+  on_account_object {
+    object_type = "WAREHOUSE"
+    object_name = snowflake_warehouse.payments_admin_wh.name
+  }
+}
+
+# --- PAYMENTS_ADMIN_ROLE warehouse grants (all warehouses) ---
+
+resource "snowflake_execute" "admin_interactive_wh_usage" {
+  execute = "GRANT USAGE, OPERATE ON WAREHOUSE PAYMENTS_INTERACTIVE_WH TO ROLE ${snowflake_account_role.payments_admin.name}"
+  revert  = "REVOKE USAGE, OPERATE ON WAREHOUSE PAYMENTS_INTERACTIVE_WH FROM ROLE ${snowflake_account_role.payments_admin.name}"
+
+  depends_on = [snowflake_execute.payments_interactive_wh]
+}
+
+resource "snowflake_grant_privileges_to_account_role" "admin_refresh_wh_usage" {
+  account_role_name = snowflake_account_role.payments_admin.name
+  privileges        = ["USAGE", "OPERATE"]
+
+  on_account_object {
+    object_type = "WAREHOUSE"
+    object_name = snowflake_warehouse.payments_refresh_wh.name
+  }
+}
+
+resource "snowflake_grant_privileges_to_account_role" "admin_admin_wh_usage" {
+  account_role_name = snowflake_account_role.payments_admin.name
+  privileges        = ["USAGE", "OPERATE"]
+
+  on_account_object {
+    object_type = "WAREHOUSE"
+    object_name = snowflake_warehouse.payments_admin_wh.name
+  }
+}
+
+# =============================================================================
+# BIND SERVICE ENDPOINT — required for SPCS service creation
+# Spec reference: Section 3.9.6
+# =============================================================================
+
+resource "snowflake_grant_privileges_to_account_role" "app_bind_service_endpoint" {
+  account_role_name = snowflake_account_role.payments_app.name
+  privileges        = ["BIND SERVICE ENDPOINT"]
+
+  on_account = true
+}
