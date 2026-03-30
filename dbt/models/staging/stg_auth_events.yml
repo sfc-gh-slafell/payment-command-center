@@ -1,0 +1,63 @@
+version: 2
+
+sources:
+  - name: raw
+    database: PAYMENTS_DB
+    schema: RAW
+    tables:
+      - name: AUTH_EVENTS_RAW
+        description: "Raw payment authorization events from Kafka HP connector"
+        columns:
+          - name: env
+            description: "Deployment environment (dev, preprod, prod)"
+            tests:
+              - not_null
+              - accepted_values:
+                  values: ["dev", "preprod", "prod"]
+          - name: event_id
+            description: "Unique event identifier (UUID)"
+            tests:
+              - not_null
+              - unique
+          - name: event_ts
+            description: "Event timestamp (UTC)"
+            tests:
+              - not_null
+          - name: payment_id
+            description: "Payment transaction identifier"
+          - name: merchant_id
+            description: "Merchant identifier (M0001-M0024)"
+          - name: merchant_name
+            description: "Merchant display name"
+          - name: region
+            description: "Geographic region (NA, EU, APAC, LATAM)"
+          - name: country
+            description: "Two-letter country code"
+          - name: card_brand
+            description: "Card network brand (VISA, MASTERCARD, AMEX, DISCOVER)"
+          - name: issuer_bin
+            description: "Bank Identification Number (first 6 digits)"
+          - name: payment_method
+            description: "Payment method type (CREDIT, DEBIT, PREPAID)"
+          - name: amount
+            description: "Transaction amount in USD"
+          - name: currency
+            description: "Transaction currency (always USD in test data)"
+          - name: auth_status
+            description: "Authorization result"
+            tests:
+              - not_null
+              - accepted_values:
+                  values: ["APPROVED", "DECLINED", "ERROR", "TIMEOUT"]
+          - name: decline_code
+            description: "Decline reason code (null for approved)"
+          - name: auth_latency_ms
+            description: "Authorization latency in milliseconds"
+          - name: source_topic
+            description: "Kafka topic (payments.auth)"
+          - name: source_partition
+            description: "Kafka partition number"
+          - name: source_offset
+            description: "Kafka offset within partition"
+          - name: ingested_at
+            description: "Timestamp when record was written to Snowflake"
