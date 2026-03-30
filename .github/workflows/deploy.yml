@@ -1,8 +1,7 @@
 name: Deploy
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 env:
   SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
@@ -15,7 +14,8 @@ jobs:
     name: 1. Terraform Apply
     runs-on: ubuntu-latest
     env:
-      TF_VAR_snowflake_account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      TF_VAR_snowflake_organization_name: ${{ secrets.SNOWFLAKE_ORGANIZATION_NAME }}
+      TF_VAR_snowflake_account_name: ${{ secrets.SNOWFLAKE_ACCOUNT_NAME }}
       TF_VAR_snowflake_user: ${{ secrets.SNOWFLAKE_USER }}
     steps:
       - uses: actions/checkout@v4
@@ -25,7 +25,7 @@ jobs:
         run: terraform init
         working-directory: terraform/
       - name: terraform apply
-        run: terraform apply -auto-approve
+        run: terraform apply -auto-approve -input=false
         working-directory: terraform/
 
   schemachange-deploy:
