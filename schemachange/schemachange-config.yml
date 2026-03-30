@@ -1,0 +1,25 @@
+# schemachange configuration for Payment Authorization Command Center
+# See: https://github.com/Snowflake-Labs/schemachange
+
+config-version: 1
+
+# Root folder containing versioned migration scripts
+root-folder: schemachange/migrations
+
+# Snowflake connection settings
+# These can be overridden via environment variables:
+#   SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_ROLE, SNOWFLAKE_WAREHOUSE,
+#   SNOWFLAKE_DATABASE, SNOWFLAKE_SCHEMA
+snowflake-account: null  # Set via SNOWFLAKE_ACCOUNT env var
+snowflake-user: null      # Set via SNOWFLAKE_USER env var
+snowflake-role: PAYMENTS_ADMIN_ROLE
+snowflake-warehouse: PAYMENTS_ADMIN_WH
+snowflake-database: PAYMENTS_DB
+snowflake-schema: RAW
+
+# Change tracking
+create-change-history-table: true
+change-history-table: PAYMENTS_DB.RAW.SCHEMACHANGE_HISTORY
+
+# Dry run by default (override with --dry-run=false for actual deployment)
+dry-run: false
