@@ -21,6 +21,11 @@ __pycache__/
 .venv/
 venv/
 
+# Secrets
+.env
+*.p8
+
 # Node
 node_modules/
 dist/
+build/

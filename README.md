@@ -208,12 +208,16 @@ Four realistic incident scenarios for demo purposes:
 
 This project is under active development. Current progress is organized into four phases with 28 open issues:
 
-### Phase 0: Foundation (4 issues)
-Foundation infrastructure and repository setup:
-- [#5](../../issues/5) Repository skeleton and dev tooling
-- [#6](../../issues/6) Kafka topic creation and configuration
-- [#7](../../issues/7) Kafka Connect HP connector config and deployment
-- [#4](../../issues/4) schemachange: interactive tables and warehouse association
+### Phase 0: Foundation (7 issues) 🔴 **CRITICAL**
+*Must-have foundation — account-level infrastructure and core data pipeline*
+
+- [ ] [#1](../../issues/1) Terraform: account infrastructure
+- [ ] [#2](../../issues/2) Terraform: SPCS compute pool and image repo
+- [ ] [#3](../../issues/3) schemachange: raw landing table DDL and grants
+- [ ] [#4](../../issues/4) schemachange: interactive tables and warehouse association
+- [ ] [#5](../../issues/5) Repository skeleton and dev tooling
+- [ ] [#6](../../issues/6) Kafka topic creation and configuration
+- [ ] [#7](../../issues/7) Kafka Connect HP connector config and deployment
 
 ### Phase 1: Pipeline (8 issues)
 Event generation, ingestion, and backend API:
@@ -253,67 +257,96 @@ Curated transformations, CI/CD, and documentation:
 
 ### Prerequisites
 
-**Snowflake:**
-- Snowflake account with access to:
-  - Snowpipe Streaming HP (preview access required)
-  - Interactive tables and warehouses
-  - Snowpark Container Services (SPCS)
-- Account admin or equivalent privileges for initial setup
+**Snowflake Requirements:**
+- Snowflake account with ACCOUNTADMIN access (or equivalent privileges)
+- **Interactive tables and warehouses** enabled (available in selected AWS regions only)
+- **Snowpark Container Services (SPCS)** enabled
+- **Snowpipe Streaming HP connector** preview access (December 2025 public preview)
+  - Note: Selected accounts only — fallback batch ingest path available if unavailable
+- Key-pair authentication configured for service accounts
 
 **Development Tools:**
-- Python 3.11+
-- Node.js 18+ and npm
-- Docker and Docker Compose
-- Terraform >= 1.5
-- Snowflake CLI
-- dbt-core with dbt-snowflake adapter
-- Git
+- **Python** >= 3.11
+- **Node.js** >= 18 and npm
+- **Docker** and Docker Compose
+- **Terraform** >= 1.5.0
+- **Snowflake CLI** (`snow` command)
+- **dbt-core** with dbt-snowflake adapter (dynamic table support)
+- **Git**
 
-**External Services:**
-- Apache Kafka cluster (self-managed or Confluent)
-- Kafka Connect cluster
+**External Infrastructure:**
+- **Apache Kafka** cluster (self-managed or Confluent Cloud)
+- **Kafka Connect** cluster with Snowflake HP connector v4.x installed
+- Network connectivity between Kafka Connect and Snowflake (same cloud region recommended)
 
 ### Quick Start
 
 ```bash
-# Clone the repository
+# 1. Clone the repository
 git clone <repository-url>
 cd payment-command-center
 
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Install Node.js dependencies
-cd app/frontend
-npm install
-cd ../..
-
-# Configure Snowflake connection
-cp config/snowflake.example.yml config/snowflake.yml
-# Edit config/snowflake.yml with your Snowflake credentials
-
-# Initialize Terraform
+# 2. Set up Snowflake infrastructure (Terraform)
 cd terraform
 terraform init
 terraform plan
-terraform apply
+terraform apply  # Creates database, schemas, warehouses, compute pools, roles
 
-# Run schemachange migrations
+# 3. Deploy database objects (schemachange)
 cd ../schemachange
-schemachange deploy -c schemachange-config.yml
+schemachange deploy -c schemachange-config.yml  # Creates tables, interactive tables
 
-# Start local development
-docker-compose up
+# 4. Create Kafka topic (24 partitions, 72h retention)
+kafka-topics --create --topic payments.auth \
+  --partitions 24 \
+  --replication-factor 3 \
+  --config retention.ms=259200000
+
+# 5. Deploy Kafka Connect connector (or start fallback relay)
+# Option A: Kafka Connect HP connector (primary path, ~10s latency)
+curl -X POST http://kafka-connect:8083/connectors \
+  -H "Content-Type: application/json" \
+  -d @kafka-connect/shared.json
+
+# Option B: Python fallback relay (~1-3 min latency)
+cd ../fallback_ingest
+docker build -t fallback-relay .
+docker run -d fallback-relay
+
+# 6. Start event generator with scenario control API
+cd ../generator
+docker build -t payment-generator .
+docker run -d -p 8000:8000 payment-generator
+
+# 7. Build and deploy dashboard to SPCS
+cd ../app
+docker build -t payments-command-center .
+docker tag payments-command-center \
+  <org>-<account>.registry.snowflakecomputing.com/payments_db/app/dashboard_repo/payments-command-center:latest
+docker push <org>-<account>.registry.snowflakecomputing.com/payments_db/app/dashboard_repo/payments-command-center:latest
+
+# Deploy SPCS service
+cd ../spcs
+snow spcs service deploy --config snowflake.yml
+
+# 8. Resume interactive warehouse and warm up cache (CRITICAL for demos)
+# Must be resumed at least 1 hour before demo for cache warm-up
+snow sql -q "ALTER WAREHOUSE PAYMENTS_INTERACTIVE_WH RESUME;"
+snow sql -q "SELECT COUNT(*) FROM PAYMENTS_DB.SERVE.IT_AUTH_MINUTE_METRICS WHERE event_minute >= DATEADD('HOUR', -2, CURRENT_TIMESTAMP());"
+snow sql -q "SELECT COUNT(*) FROM PAYMENTS_DB.SERVE.IT_AUTH_EVENT_SEARCH WHERE event_ts >= DATEADD('MINUTE', -60, CURRENT_TIMESTAMP());"
+
+# 9. Run curated pipeline (dbt - optional for live dashboard)
+cd ../dbt
+dbt deps
+dbt run    # Creates dynamic tables for BI/ML use cases
+dbt test   # Validates data quality
 ```
 
-### Configuration
-
-Key configuration files:
-- `config/snowflake.yml` - Snowflake connection settings
-- `terraform/variables.tf` - Infrastructure configuration
-- `schemachange/schemachange-config.yml` - Migration settings
-- `dbt/profiles.yml` - dbt connection profiles
-- `kafka-connect/shared.json` - Kafka Connect configuration
+**Important Pre-Demo Steps:**
+1. **Resume interactive warehouse** at least 1 hour before demo (cache warm-up required)
+2. **Run warm-up queries** against both interactive tables
+3. **Verify data flow**: Generator → Kafka → Snowflake → Dashboard
+4. **Test scenario injection** via event generator control API
 
 ---
 
@@ -469,25 +502,104 @@ Targeted merchant experiencing issues:
 ### Latency Spike
 Regional network degradation:
 - EU region latency jumps to 800-2000ms
-- Approval rates remain normal
+- Approval rates remain normal (differentiates from outage)
 - Other regions unaffected
-- Latency panel shows distribution shift
+- Latency panel shows distribution shift with p95/p99 spikes
 
-**Triggering Scenarios:**
+**Recommended Demo Flow:**
+1. **Baseline** (5 min) — establish healthy state, show ~95% approval, 50-150ms latency
+2. **Issuer Outage** (5 min) — observe BIN-level failure spike in breakdown table and failures panel
+3. **Return to Baseline** (2 min) — demonstrate recovery within ~60-90 seconds
+4. **Latency Spike** (5 min) — show regional latency degradation in latency panel
+5. **Emphasize Freshness Widget** throughout — raw data arrives in seconds, serving refreshes every 60s
+
+**Triggering Scenarios via Control API:**
 ```bash
-# Start scenario
+# Check current status
+curl http://localhost:8000/status
+
+# Activate issuer outage for 5 minutes
 curl -X POST http://localhost:8000/scenario \
   -H "Content-Type: application/json" \
   -d '{"profile": "issuer_outage", "duration_sec": 300}'
 
-# Return to baseline
+# Activate merchant decline spike
+curl -X POST http://localhost:8000/scenario \
+  -H "Content-Type: application/json" \
+  -d '{"profile": "merchant_decline_spike", "duration_sec": 300}'
+
+# Activate latency spike
+curl -X POST http://localhost:8000/scenario \
+  -H "Content-Type: application/json" \
+  -d '{"profile": "latency_spike", "duration_sec": 300}'
+
+# Return to baseline immediately
 curl -X DELETE http://localhost:8000/scenario
 
-# Adjust event rate
+# Adjust event rate (events per second)
 curl -X POST http://localhost:8000/rate \
   -H "Content-Type: application/json" \
   -d '{"events_per_sec": 1000}'
 ```
+
+**Dashboard Response Time:**
+- Allow **60-90 seconds** for scenario effects to appear in dashboard
+- Interactive tables refresh on 60-second TARGET_LAG
+- Freshness widget shows exact raw ingest vs serving layer lag
+
+---
+
+## Operational Notes
+
+### Interactive Warehouse Cache Warm-Up
+**CRITICAL for demo success:**
+- Interactive warehouses are created in **SUSPENDED** state
+- Must **RESUME at least 1 hour before demo** for cache warm-up
+- Cache warm-up time varies: minutes to ~1 hour depending on data volume
+- **Minimum AUTO_SUSPEND is 86400 seconds (24 hours)** — warehouse runs continuously
+- Cold cache = slow first queries (minutes) and poor demo experience
+
+**Warm-up procedure:**
+```sql
+-- Resume warehouse (do this 1+ hour before demo)
+ALTER WAREHOUSE PAYMENTS_INTERACTIVE_WH RESUME;
+
+-- Run warm-up queries
+SELECT COUNT(*), SUM(event_count), AVG(latency_sum_ms / NULLIF(latency_count, 0))
+FROM PAYMENTS_DB.SERVE.IT_AUTH_MINUTE_METRICS
+WHERE event_minute >= DATEADD('HOUR', -2, CURRENT_TIMESTAMP());
+
+SELECT COUNT(*)
+FROM PAYMENTS_DB.SERVE.IT_AUTH_EVENT_SEARCH
+WHERE event_ts >= DATEADD('MINUTE', -60, CURRENT_TIMESTAMP());
+```
+
+### Troubleshooting Common Issues
+
+**Dashboard shows no data:**
+1. Check event generator is producing events: `curl http://localhost:8000/status`
+2. Verify Kafka topic has messages: `kafka-console-consumer --topic payments.auth --from-beginning --max-messages 10`
+3. Check connector status (if using HP connector): `curl http://kafka-connect:8083/connectors/auth-events-sink-payments/status`
+4. Query raw table directly: `SELECT COUNT(*) FROM PAYMENTS_DB.RAW.AUTH_EVENTS_RAW WHERE ingested_at >= DATEADD('MINUTE', -5, CURRENT_TIMESTAMP());`
+5. Check interactive table refresh status: `SELECT * FROM TABLE(INFORMATION_SCHEMA.DYNAMIC_TABLE_REFRESH_HISTORY('IT_AUTH_MINUTE_METRICS')) ORDER BY REFRESH_START_TIME DESC LIMIT 5;`
+
+**Scenario changes not appearing:**
+- Wait 60-90 seconds for interactive table refresh
+- Check freshness widget for serving lag
+- Verify scenario is active: `curl http://localhost:8000/status`
+- Monitor raw table for new event patterns
+
+**Slow dashboard queries:**
+- Confirm interactive warehouse is RESUMED (not suspended)
+- Run warm-up queries if recently resumed
+- Check query history for execution times
+- Verify CLUSTER BY keys align with filter patterns
+
+**HP Connector issues (primary ingest path):**
+- Check connector logs via Kafka Connect REST API
+- Verify preview access to HP connector v4.x
+- Switch to fallback Python relay if connector unavailable
+- Fallback relay provides ~1-3 min latency (vs ~10s with HP connector)
 
 ---
 
@@ -632,15 +744,49 @@ This project is a demonstration application for educational and evaluation purpo
 - This is a DEMO project with SYNTHETIC DATA ONLY
 - No real payment data, cardholder information, or PCI-sensitive data
 - Not intended for production use without significant security and compliance hardening
-- Snowpipe Streaming HP connector is in preview and not production-ready
+- Snowpipe Streaming HP connector is in preview (December 2025) and not production-ready
 
-For production use cases involving real payment data:
-- Implement comprehensive PCI compliance controls
-- Add masking policies for sensitive fields
-- Use separate Snowflake accounts for environment isolation
-- Implement external authentication and authorization
-- Add comprehensive audit logging
-- Conduct security review and penetration testing
+### Known Constraints and Limitations
+
+**Interactive Tables & Warehouses:**
+- Minimum TARGET_LAG is 60 seconds (cannot refresh faster)
+- Interactive warehouses can only query interactive tables (not standard tables)
+- Minimum AUTO_SUSPEND is 86400 seconds (24 hours) — continuous credit consumption
+- Cache warm-up required after resume (minutes to ~1 hour)
+- Interactive tables support INSERT OVERWRITE only (no UPDATE/DELETE DML)
+- Cannot source streams or serve as base for dynamic tables
+
+**SPCS (Snowpark Container Services):**
+- Dashboard access requires Snowflake users in same account (no external viewer access in V1)
+- Public endpoints require BIND SERVICE ENDPOINT privilege (verify current docs)
+- Cannot run CALL commands or use `->>` pipe operator from interactive warehouses
+
+**Shared Topic/Table Model:**
+- All environments share ingest pipeline — one connector outage affects all
+- Mis-tagged `env` field could cause environment data mixing
+- Noisy neighbor risk: one environment's volume spike impacts others
+- **Production Note:** Real systems should use separate Kafka topics per environment for blast-radius isolation
+
+**V1 Exclusions:**
+- No late-arriving or out-of-order event handling (assumes timely arrival)
+- No external viewer authentication (passive demo observers only)
+- No multi-account federation (all environments in one account)
+- No real cardholder data masking policies (synthetic data only)
+- No cross-region replication or disaster recovery
+
+### Production Hardening Requirements
+
+For production use cases involving real payment data, the following must be added:
+- [ ] **PCI Compliance**: Comprehensive controls for payment card industry standards
+- [ ] **Data Masking**: Snowflake masking policies for sensitive fields (payment_id, issuer_bin)
+- [ ] **Multi-Account Isolation**: Separate Snowflake accounts for environment blast-radius isolation
+- [ ] **External Authentication**: OAuth or external IdP integration for dashboard access
+- [ ] **Audit Logging**: Comprehensive access and query logging for compliance
+- [ ] **Security Review**: Penetration testing and vulnerability scanning
+- [ ] **Disaster Recovery**: Cross-region replication and recovery procedures
+- [ ] **Load Testing**: Capacity planning for production event volumes
+- [ ] **Monitoring & Alerting**: Production-grade observability and incident response
+- [ ] **Data Retention**: Archival and retention policies compliant with regulations
 
 ---
 
