@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from config import BOOTSTRAP_SERVERS, TOPIC, DEFAULT_RATE, DEFAULT_ENV
+from config import TOPIC, DEFAULT_RATE, DEFAULT_ENV
 from producer import create_producer, generate_event
 from scenarios import SCENARIOS, Baseline
 
@@ -88,7 +88,10 @@ async def get_status():
 @app.post("/scenario")
 async def set_scenario(req: ScenarioRequest):
     if req.profile not in SCENARIOS:
-        return {"error": f"Unknown profile: {req.profile}", "available": list(SCENARIOS.keys())}
+        return {
+            "error": f"Unknown profile: {req.profile}",
+            "available": list(SCENARIOS.keys()),
+        }
 
     # Cancel any existing duration timer
     if state["scenario_task"] is not None:
@@ -97,7 +100,9 @@ async def set_scenario(req: ScenarioRequest):
     state["scenario"] = SCENARIOS[req.profile]()
 
     # Auto-return to baseline after duration
-    state["scenario_task"] = asyncio.create_task(auto_return_to_baseline(req.duration_sec))
+    state["scenario_task"] = asyncio.create_task(
+        auto_return_to_baseline(req.duration_sec)
+    )
 
     return {"profile": req.profile, "duration_sec": req.duration_sec}
 

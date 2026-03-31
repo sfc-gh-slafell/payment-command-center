@@ -1,6 +1,6 @@
 """GET /api/v1/filters — populate filter dropdowns."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -20,8 +20,10 @@ class FiltersResponse(BaseModel):
 @router.get("/api/v1/filters", response_model=FiltersResponse)
 async def get_filters():
     from main import get_client
+
     client = get_client()
     from pathlib import Path
+
     sql = Path(__file__).parent.parent.joinpath("queries", "filters.sql").read_text()
     rows = client.execute_query(sql)
     if rows:

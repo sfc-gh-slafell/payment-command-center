@@ -32,6 +32,7 @@ async def get_breakdown(
 ):
     from main import get_client
     from pathlib import Path
+
     client = get_client()
 
     if dimension not in VALID_DIMENSIONS:

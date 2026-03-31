@@ -40,6 +40,7 @@ async def get_events(
 ):
     from main import get_client
     from pathlib import Path
+
     client = get_client()
 
     sql = Path(__file__).parent.parent.joinpath("queries", "events.sql").read_text()

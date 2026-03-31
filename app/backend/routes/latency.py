@@ -35,6 +35,7 @@ async def get_latency(
     max_limit: int = Query(10000, description="Max events for percentile calculation"),
 ):
     from main import get_client
+
     client = get_client()
 
     # Part 1: Histogram from IT_AUTH_MINUTE_METRICS
@@ -54,12 +55,15 @@ async def get_latency(
       AND (%(merchant_id)s IS NULL OR merchant_id = %(merchant_id)s)
       AND (%(region)s IS NULL OR region = %(region)s)
     """
-    hist_rows = client.execute_query(histogram_sql, {
-        "time_range_minutes": time_range,
-        "env": env,
-        "merchant_id": merchant_id,
-        "region": region,
-    })
+    hist_rows = client.execute_query(
+        histogram_sql,
+        {
+            "time_range_minutes": time_range,
+            "env": env,
+            "merchant_id": merchant_id,
+            "region": region,
+        },
+    )
 
     histogram = []
     stats = LatencyStats()
@@ -98,11 +102,14 @@ async def get_latency(
     )
     """
     try:
-        pct_rows = client.execute_query(percentile_sql, {
-            "time_range_minutes": time_range,
-            "env": env,
-            "max_limit": max_limit,
-        })
+        pct_rows = client.execute_query(
+            percentile_sql,
+            {
+                "time_range_minutes": time_range,
+                "env": env,
+                "max_limit": max_limit,
+            },
+        )
         if pct_rows:
             pr = pct_rows[0]
             stats.p50 = pr.get("P50")

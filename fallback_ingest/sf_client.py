@@ -24,12 +24,25 @@ logger = logging.getLogger(__name__)
 TABLE_NAME = "AUTH_EVENTS_RAW"
 
 COLUMNS = [
-    "env", "event_ts", "event_id", "payment_id",
-    "merchant_id", "merchant_name", "region", "country",
-    "card_brand", "issuer_bin", "payment_method",
-    "amount", "currency", "auth_status", "decline_code",
+    "env",
+    "event_ts",
+    "event_id",
+    "payment_id",
+    "merchant_id",
+    "merchant_name",
+    "region",
+    "country",
+    "card_brand",
+    "issuer_bin",
+    "payment_method",
+    "amount",
+    "currency",
+    "auth_status",
+    "decline_code",
     "auth_latency_ms",
-    "source_topic", "source_partition", "source_offset",
+    "source_topic",
+    "source_partition",
+    "source_offset",
 ]
 
 

@@ -2,14 +2,35 @@
 
 MERCHANTS = [
     {"merchant_id": f"M{i:04d}", "merchant_name": name}
-    for i, name in enumerate([
-        "CloudPay Global", "SwiftCart Online", "TechBazaar", "FreshMart Delivery",
-        "UrbanRide Transit", "PixelPlay Games", "GreenLeaf Organics", "JetSet Travel",
-        "AudioWave Music", "ByteSize Storage", "NovaPharma", "SilverScreen Cinema",
-        "AquaFit Wellness", "CodeBrew Coffee", "SkyLink Telecom", "PrimeStitch Fashion",
-        "IronForge Hardware", "BloomBox Florist", "DataVault Hosting", "ZenSpa Retreat",
-        "Velocity Motors", "CrystalClear Optics", "NorthStar Insurance", "EcoPower Energy",
-    ], start=1)
+    for i, name in enumerate(
+        [
+            "CloudPay Global",
+            "SwiftCart Online",
+            "TechBazaar",
+            "FreshMart Delivery",
+            "UrbanRide Transit",
+            "PixelPlay Games",
+            "GreenLeaf Organics",
+            "JetSet Travel",
+            "AudioWave Music",
+            "ByteSize Storage",
+            "NovaPharma",
+            "SilverScreen Cinema",
+            "AquaFit Wellness",
+            "CodeBrew Coffee",
+            "SkyLink Telecom",
+            "PrimeStitch Fashion",
+            "IronForge Hardware",
+            "BloomBox Florist",
+            "DataVault Hosting",
+            "ZenSpa Retreat",
+            "Velocity Motors",
+            "CrystalClear Optics",
+            "NorthStar Insurance",
+            "EcoPower Energy",
+        ],
+        start=1,
+    )
 ]
 
 BINS = [

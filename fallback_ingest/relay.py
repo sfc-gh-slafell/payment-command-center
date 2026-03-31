@@ -6,7 +6,13 @@ import time
 
 from confluent_kafka import Consumer, KafkaError
 
-from config import KAFKA_BOOTSTRAP_SERVERS, KAFKA_TOPIC, KAFKA_GROUP_ID, BATCH_SIZE, BATCH_TIMEOUT
+from config import (
+    KAFKA_BOOTSTRAP_SERVERS,
+    KAFKA_TOPIC,
+    KAFKA_GROUP_ID,
+    BATCH_SIZE,
+    BATCH_TIMEOUT,
+)
 from sf_client import get_connection, write_batch
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -14,12 +20,17 @@ logger = logging.getLogger(__name__)
 
 
 def create_consumer() -> Consumer:
-    return Consumer({
-        "bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS,
-        "group.id": KAFKA_GROUP_ID,
-        "auto.offset.reset": "earliest",
-        "enable.auto.commit": False,
-    })
+    return Consumer(
+        {
+            "bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS,
+            "group.id": KAFKA_GROUP_ID,
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": False,
+            # Message size limits aligned with broker (10 MB)
+            "fetch.max.bytes": 10485760,
+            "max.partition.fetch.bytes": 10485760,
+        }
+    )
 
 
 def parse_message(msg) -> dict | None:
@@ -44,8 +55,12 @@ def run_relay():
     buffer: list[dict] = []
     last_flush = time.time()
 
-    logger.info("Relay started — consuming from %s, batch_size=%d, batch_timeout=%.1fs",
-                KAFKA_TOPIC, BATCH_SIZE, BATCH_TIMEOUT)
+    logger.info(
+        "Relay started — consuming from %s, batch_size=%d, batch_timeout=%.1fs",
+        KAFKA_TOPIC,
+        BATCH_SIZE,
+        BATCH_TIMEOUT,
+    )
 
     try:
         while True:

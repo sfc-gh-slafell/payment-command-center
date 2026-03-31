@@ -13,13 +13,18 @@ from config import BOOTSTRAP_SERVERS, TOPIC, DEFAULT_ENV
 
 def create_producer() -> Producer:
     """Create a Kafka producer with optimized settings."""
-    return Producer({
-        "bootstrap.servers": BOOTSTRAP_SERVERS,
-        "compression.type": "zstd",
-        "acks": "all",
-        "linger.ms": 5,
-        "batch.size": 16384,
-    })
+    return Producer(
+        {
+            "bootstrap.servers": BOOTSTRAP_SERVERS,
+            "compression.type": "zstd",
+            "acks": "all",
+            "linger.ms": 5,
+            "batch.size": 16384,
+            # Message size limits aligned with broker (10 MB)
+            "message.max.bytes": 10485760,
+            "max.request.size": 10485760,
+        }
+    )
 
 
 def generate_event(env: str = DEFAULT_ENV, rng: random.Random | None = None) -> dict:
@@ -34,7 +39,9 @@ def generate_event(env: str = DEFAULT_ENV, rng: random.Random | None = None) -> 
 
     # Baseline: ~95% approval, 50-150ms latency
     is_approved = r.random() < 0.95
-    auth_status = "APPROVED" if is_approved else r.choice(["DECLINED", "ERROR", "TIMEOUT"])
+    auth_status = (
+        "APPROVED" if is_approved else r.choice(["DECLINED", "ERROR", "TIMEOUT"])
+    )
     decline_code = None if is_approved else r.choice(DECLINE_CODES)
     auth_latency_ms = round(r.uniform(50, 150), 1)
     amount = round(r.uniform(1.00, 5000.00), 2)

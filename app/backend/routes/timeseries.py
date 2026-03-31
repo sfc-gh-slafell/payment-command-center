@@ -27,6 +27,7 @@ async def get_timeseries(
 ):
     from main import get_client
     from pathlib import Path
+
     client = get_client()
 
     sql = Path(__file__).parent.parent.joinpath("queries", "timeseries.sql").read_text()

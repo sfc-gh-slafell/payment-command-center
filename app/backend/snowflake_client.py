@@ -5,7 +5,6 @@ Architecture:
   - Standard WH pool (PAYMENTS_ADMIN_WH) — RAW schema standard table (freshness queries)
 """
 
-import json
 import logging
 import os
 from pathlib import Path
@@ -61,7 +60,9 @@ def _load_private_key() -> bytes | None:
         return None
 
 
-def _create_connection(warehouse: str, schema: str) -> snowflake.connector.SnowflakeConnection:
+def _create_connection(
+    warehouse: str, schema: str
+) -> snowflake.connector.SnowflakeConnection:
     """Create a connection using SPCS token auth or key-pair auth fallback."""
     base_params = {
         "account": SNOWFLAKE_ACCOUNT,
@@ -118,8 +119,9 @@ class SnowflakeClient:
             self._standard_conn = _create_connection(ADMIN_WH, SCHEMA_RAW)
         return self._standard_conn
 
-    def execute_query(self, sql: str, params: dict | None = None,
-                      use_standard_wh: bool = False) -> list[dict]:
+    def execute_query(
+        self, sql: str, params: dict | None = None, use_standard_wh: bool = False
+    ) -> list[dict]:
         """Execute SQL and return results as list of dicts.
 
         Routes to standard warehouse when use_standard_wh=True (freshness queries).
