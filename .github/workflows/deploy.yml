@@ -89,6 +89,7 @@ jobs:
     env:
       IMAGE_TAG: ${{ github.sha }}
       REGISTRY_HOST: ${{ format('{0}-{1}.registry.snowflakecomputing.com', secrets.SNOWFLAKE_ORGANIZATION_NAME, secrets.SNOWFLAKE_ACCOUNT_NAME) }}
+      SNOWFLAKE_ACCOUNT: ${{ format('{0}-{1}', secrets.SNOWFLAKE_ORGANIZATION_NAME, secrets.SNOWFLAKE_ACCOUNT_NAME) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -101,8 +102,7 @@ jobs:
           mkdir -p ~/.snowflake
           cat > ~/.snowflake/connections.toml <<EOF
           [default]
-          organization_name = "${{ secrets.SNOWFLAKE_ORGANIZATION_NAME }}"
-          account_name = "${{ secrets.SNOWFLAKE_ACCOUNT_NAME }}"
+          account = "${{ secrets.SNOWFLAKE_ORGANIZATION_NAME }}-${{ secrets.SNOWFLAKE_ACCOUNT_NAME }}"
           user = "${{ secrets.SNOWFLAKE_USER }}"
           authenticator = "SNOWFLAKE_JWT"
           private_key_path = "/tmp/snowflake_key.p8"
@@ -131,6 +131,8 @@ jobs:
     name: 5. SPCS Service Deploy
     runs-on: ubuntu-latest
     needs: docker-push
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ format('{0}-{1}', secrets.SNOWFLAKE_ORGANIZATION_NAME, secrets.SNOWFLAKE_ACCOUNT_NAME) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -143,8 +145,7 @@ jobs:
           mkdir -p ~/.snowflake
           cat > ~/.snowflake/connections.toml <<EOF
           [default]
-          organization_name = "${{ secrets.SNOWFLAKE_ORGANIZATION_NAME }}"
-          account_name = "${{ secrets.SNOWFLAKE_ACCOUNT_NAME }}"
+          account = "${{ secrets.SNOWFLAKE_ORGANIZATION_NAME }}-${{ secrets.SNOWFLAKE_ACCOUNT_NAME }}"
           user = "${{ secrets.SNOWFLAKE_USER }}"
           authenticator = "SNOWFLAKE_JWT"
           private_key_path = "/tmp/snowflake_key.p8"

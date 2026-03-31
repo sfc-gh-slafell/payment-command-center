@@ -68,7 +68,7 @@ resource "snowflake_grant_privileges_to_account_role" "admin_schema_raw" {
 
 resource "snowflake_grant_privileges_to_account_role" "admin_schema_serve" {
   account_role_name = snowflake_account_role.payments_admin.name
-  privileges        = ["USAGE", "CREATE TABLE", "CREATE DYNAMIC TABLE"]
+  privileges        = ["USAGE", "CREATE TABLE", "CREATE INTERACTIVE TABLE", "CREATE DYNAMIC TABLE"]
 
   on_schema {
     schema_name = snowflake_schema.serve.fully_qualified_name
