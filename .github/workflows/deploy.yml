@@ -17,6 +17,7 @@ jobs:
       TF_VAR_snowflake_organization_name: ${{ secrets.SNOWFLAKE_ORGANIZATION_NAME }}
       TF_VAR_snowflake_account_name: ${{ secrets.SNOWFLAKE_ACCOUNT_NAME }}
       TF_VAR_snowflake_user: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
