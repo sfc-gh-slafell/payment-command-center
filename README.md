@@ -296,11 +296,21 @@ terraform apply  # Creates database, schemas, warehouses, compute pools, roles
 cd ../schemachange
 schemachange deploy -c schemachange-config.yml  # Creates tables, interactive tables
 
-# 4. Create Kafka topic (24 partitions, 72h retention)
-kafka-topics --create --topic payments.auth \
+# 4. Create Kafka topic — full configuration codified in kafka/topic-config.json
+# Option A: Automated (requires jq + kafka-topics in PATH)
+./scripts/create_kafka_topics.sh
+
+# Option B: Manual (single-node local dev — use replication-factor 1)
+kafka-topics --create \
+  --bootstrap-server localhost:9092 \
+  --topic payments.auth \
   --partitions 24 \
   --replication-factor 3 \
-  --config retention.ms=259200000
+  --config retention.ms=259200000 \
+  --config cleanup.policy=delete \
+  --config compression.type=zstd \
+  --config min.insync.replicas=2
+# Configuration rationale: kafka/topic-config.json
 
 # 5. Deploy Kafka Connect connector (or start fallback relay)
 # Option A: Kafka Connect HP connector (primary path, ~10s latency)
@@ -377,6 +387,10 @@ payment-command-center/
 │   └── catalog.py          # Merchant/BIN/region catalog
 ├── kafka-connect/          # Kafka Connect configuration
 │   └── shared.json         # HP connector config
+├── kafka/                  # Kafka topic configuration
+│   └── topic-config.json   # Topic specs (partitions, retention, compression)
+├── scripts/                # Operational scripts
+│   └── create_kafka_topics.sh  # Idempotent topic creation from topic-config.json
 ├── fallback_ingest/        # Python batch ingest relay
 │   ├── relay.py            # Kafka consumer -> Snowflake
 │   └── sf_client.py        # Snowflake connection helpers

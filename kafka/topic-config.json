@@ -1,0 +1,34 @@
+{
+  "topics": [
+    {
+      "name": "payments.auth",
+      "partitions": 24,
+      "replication_factor": 3,
+      "config": {
+        "retention.ms": "259200000",
+        "cleanup.policy": "delete",
+        "compression.type": "zstd",
+        "min.insync.replicas": "2"
+      },
+      "rationale": {
+        "partitions": "24 partitions support 2,000 events/sec with headroom and allow parallel HP connector tasks",
+        "replication_factor": "3 for HA in production; use 1 for local development",
+        "retention.ms": "72-hour (3-day) retention for replay window during connector recovery scenarios",
+        "compression.type": "zstd for end-to-end compression (producer → broker → HP connector → Snowflake)",
+        "min.insync.replicas": "2 ensures durability guarantee when producer uses acks=all"
+      }
+    }
+  ],
+  "environments": {
+    "local_dev": {
+      "topic_name": "payments.auth",
+      "replication_factor": 1,
+      "note": "Single-node local Kafka — replication_factor=1 only"
+    },
+    "production": {
+      "topic_pattern": "payments.auth.{env}",
+      "examples": ["payments.auth.dev", "payments.auth.preprod", "payments.auth.prod"],
+      "note": "Production systems should use per-environment topics for isolation. Current demo uses a single topic with logical env separation via the 'env' field in each event."
+    }
+  }
+}
