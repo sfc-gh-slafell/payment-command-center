@@ -119,6 +119,41 @@ snow spcs service upgrade PAYMENT_DASHBOARD \
 
 **Rationale:** `snow spcs service create` fails if service already exists (not idempotent). Using `upgrade || create` pattern makes CI re-runnable.
 
+### Snowflake Connection from SPCS Containers
+
+SPCS **automatically injects** `SNOWFLAKE_HOST` and `SNOWFLAKE_ACCOUNT` as environment variables into every running container. These point to the **internal** Snowflake network endpoint reachable from within the container — no External Access Integration required for Snowflake API calls when using SPCS OAuth token auth.
+
+**Never set `SNOWFLAKE_HOST` or `SNOWFLAKE_ACCOUNT` in the service spec.** Doing so overrides the injected internal endpoint with the public Snowflake URL (e.g., `sfpscogs-slafell-aws-2.snowflakecomputing.com`), which is not DNS-resolvable from inside an SPCS container. Every API call will fail with:
+```
+socket.gaierror: [Errno -2] Name or service not known
+Failed to resolve 'sfpscogs-slafell-aws-2.snowflakecomputing.com'
+```
+
+**Correct application code pattern** — read both vars but never hardcode them:
+```python
+SNOWFLAKE_HOST = os.getenv("SNOWFLAKE_HOST", "")    # auto-injected by SPCS
+SNOWFLAKE_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT", "")  # auto-injected by SPCS
+
+base_params = {"account": SNOWFLAKE_ACCOUNT, ...}
+if SNOWFLAKE_HOST:
+    base_params["host"] = SNOWFLAKE_HOST  # uses internal endpoint in SPCS
+
+# SPCS token auth — token lives at /snowflake/session/token
+token = Path("/snowflake/session/token").read_text().strip()
+snowflake.connector.connect(**base_params, token=token, authenticator="oauth")
+```
+
+**Correct service spec** — omit both vars, let SPCS inject them:
+```yaml
+env:
+  SNOWFLAKE_WAREHOUSE: PAYMENTS_INTERACTIVE_WH   # fine to set
+  SNOWFLAKE_DATABASE: PAYMENTS_DB                # fine to set
+  # SNOWFLAKE_HOST: ...    ← DO NOT SET
+  # SNOWFLAKE_ACCOUNT: ... ← DO NOT SET
+```
+
+The SPCS OAuth token itself is always available at `/snowflake/session/token` inside the container regardless of spec configuration.
+
 ## Common Pitfalls
 
 1. **"unknown option 'serviceRoles'"** — Remove `serviceRoles` from spec. It's not a valid SPCS option.
@@ -127,6 +162,7 @@ snow spcs service upgrade PAYMENT_DASHBOARD \
 4. **Service won't start** — Check readiness probe path exists in the container. `/health` must return 200.
 5. **Resource limits too low** — Minimum 512Mi memory for most Python apps. FastAPI + React needs at least 1Gi.
 6. **Service create fails on re-deploy** — Use `snow spcs service upgrade` first, fallback to `create` if it doesn't exist. `create` is not idempotent.
+7. **All API routes return 500 / DNS failure** — Do not set `SNOWFLAKE_HOST` or `SNOWFLAKE_ACCOUNT` in the spec. See "Snowflake Connection from SPCS Containers" above.
 
 ## Valid vs Invalid Spec Keys
 

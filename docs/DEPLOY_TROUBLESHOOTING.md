@@ -484,3 +484,379 @@ docker build --platform linux/amd64 -f generator/Dockerfile generator/ ...
     snow spcs service upgrade PAYMENT_DASHBOARD --spec-path spcs/service_spec.yaml --database PAYMENTS_DB --schema APP \
       || snow spcs service create PAYMENT_DASHBOARD --spec-path spcs/service_spec.yaml --compute-pool PAYMENTS_DASHBOARD_POOL --database PAYMENTS_DB --schema APP
 ```
+
+---
+
+## Issue 18 — Frontend returns `{"detail":"Not Found"}` (off-by-one `.parent` in static path)
+
+**Symptom:** The dashboard URL loads the Snowflake SSO login page, but after authenticating the app returns `{"detail":"Not Found"}` from FastAPI. `/health` responds correctly.
+
+**Root cause:** `main.py` calculated the static files path with one extra `.parent`:
+
+```python
+# Wrong — resolves to /frontend/dist (does not exist)
+static_dir = Path(__file__).parent.parent / "frontend" / "dist"
+```
+
+The Dockerfile copies the frontend build to `/app/frontend/dist/`:
+```
+WORKDIR /app
+COPY backend/ ./          # main.py → /app/main.py
+COPY --from=frontend-builder /frontend/dist ./frontend/dist  # → /app/frontend/dist
+```
+
+`Path(__file__).parent` = `/app`, then `.parent` again = `/` (filesystem root). So `static_dir` resolved to `/frontend/dist` which does not exist. The `if static_dir.exists():` guard silently skipped the mount, leaving FastAPI to return its default 404 for `/`.
+
+**Fix:** Removed the extra `.parent` in `app/backend/main.py`:
+
+```python
+# Correct — resolves to /app/frontend/dist
+static_dir = Path(__file__).parent / "frontend" / "dist"
+```
+
+---
+
+## Issue 19 — Kafka connector using wrong class (`SnowflakeSinkConnector` vs `SnowflakeStreamingSinkConnector`)
+
+**Symptom:** `AUTH_EVENTS_RAW` table has 0 rows despite the generator running and connector showing as RUNNING in Kafka Connect. No data lands in Snowflake.
+
+**Root cause:** `kafka-connect/shared.json` had `connector.class: com.snowflake.kafka.connector.SnowflakeSinkConnector` — the v3.x legacy class. The HP (High Performance) Kafka connector v4.x uses a different class: `SnowflakeStreamingSinkConnector`. Using the wrong class caused the connector to operate in legacy Snowpipe batch mode, which requires different privileges and object types not present in this setup.
+
+**Fix:** Updated `kafka-connect/shared.json`:
+
+```json
+"connector.class": "com.snowflake.kafka.connector.SnowflakeStreamingSinkConnector"
+```
+
+---
+
+## Issue 20 — v3.x-only config key `snowflake.ingestion.method` present in HP connector config
+
+**Symptom:** Related to Issue 19 — connector config contained `"snowflake.ingestion.method": "SNOWPIPE_STREAMING"` which is a v3.x parameter used to opt-in to Snowpipe Streaming mode. In HP connector v4.x, Snowpipe Streaming HPA is the only mode; the key is unrecognised and causes a config validation warning/error.
+
+**Root cause:** Config was written against v3.x docs and never updated when the project moved to HP v4.x.
+
+**Fix:** Removed `snowflake.ingestion.method` from `kafka-connect/shared.json`. It has no effect in v4.x and its presence can cause connector startup errors.
+
+---
+
+## Issue 21 — Wrong metadata config key (`offsetAndPartition` camelCase vs `offset.and.partition` dot-separated)
+
+**Symptom:** `SOURCE_PARTITION` and `SOURCE_OFFSET` columns in `AUTH_EVENTS_RAW` remain NULL even after data starts landing.
+
+**Root cause:** `kafka-connect/shared.json` had `"snowflake.metadata.offsetAndPartition": "true"` (camelCase). The correct key for HP connector v4.x is `"snowflake.metadata.offset.and.partition"` (dot-separated). The camelCase key is silently ignored, so offset/partition are never written into `RECORD_METADATA`.
+
+**Fix:** Updated key in `kafka-connect/shared.json`:
+
+```json
+"snowflake.metadata.offset.and.partition": "true"
+```
+
+---
+
+## Issue 22 — No user-defined PIPE causes `SOURCE_TOPIC/PARTITION/OFFSET` columns to be NULL
+
+**Symptom:** Even after Issues 19–21 are fixed, `SOURCE_TOPIC`, `SOURCE_PARTITION`, and `SOURCE_OFFSET` columns are NULL. Additionally the `INGESTED_AT NOT NULL` constraint would cause row rejection if `CURRENT_TIMESTAMP()` is not explicitly provided.
+
+**Root cause:** Without a user-defined pipe, the HP connector auto-generates a pipe whose `COPY INTO` maps top-level JSON keys to columns by name. The generator JSON has no `source_topic`, `source_partition`, or `source_offset` keys — those values live in `RECORD_METADATA` (connector-injected metadata). The auto-generated pipe has no way to extract them. `INGESTED_AT` also has no corresponding JSON key, so it would receive NULL and violate the `NOT NULL` constraint.
+
+**Fix:** Created `PAYMENTS_DB.RAW.AUTH_EVENTS_RAW` pipe (same name as destination table — the trigger for user-defined pipe mode) via schemachange migration `V1.6.0__create_ingest_pipe.sql`:
+
+```sql
+CREATE OR REPLACE PIPE PAYMENTS_DB.RAW.AUTH_EVENTS_RAW AS
+COPY INTO PAYMENTS_DB.RAW.AUTH_EVENTS_RAW (
+    ENV, EVENT_TS, ..., SOURCE_TOPIC, SOURCE_PARTITION, SOURCE_OFFSET, INGESTED_AT
+)
+FROM (
+    SELECT
+        $1:env::VARCHAR(16), ...,
+        $1:RECORD_METADATA:topic::VARCHAR(128),
+        $1:RECORD_METADATA:partition::NUMBER,
+        $1:RECORD_METADATA:offset::NUMBER,
+        CURRENT_TIMESTAMP()
+    FROM TABLE(DATA_SOURCE(TYPE => 'STREAMING'))
+);
+```
+
+`DATA_SOURCE(TYPE => 'STREAMING')` is the required FROM clause for HP connector user-defined pipes (not a stage path).
+
+**Note on pipe privileges:** `GRANT USAGE ON PIPE` is not valid syntax — `USAGE` is not a privilege that applies to PIPE objects. The correct privilege for non-owners is `MONITOR` (read pipe metadata). `OPERATE` allows pause/resume. The connector role (`PAYMENTS_INGEST_ROLE`) was granted `MONITOR`.
+## Issue 23 — ERR_PIPE_DOES_NOT_EXIST_OR_NOT_AUTHORIZED despite pipe existing
+
+**Symptom:** HP Kafka Connector v4.x shows error `ERR_PIPE_DOES_NOT_EXIST_OR_NOT_AUTHORIZED` in task logs. Pipe exists and has `MONITOR` privilege granted to connector role. Some tasks show RUNNING, others FAILED.
+
+**Root cause:** HP connector v4.x accesses pipes via Snowpipe Streaming API, which requires more privileges than initially documented:
+1. Missing `SELECT` privilege on destination table (only had `INSERT`)
+2. Missing `OPERATE` privilege on pipe (only had `MONITOR`)
+
+`MONITOR` privilege allows reading pipe metadata but doesn't grant API access for ingestion. `OPERATE` privilege is required for Snowpipe Streaming API operations.
+
+**Fix:** Created schemachange migration `V1.7.0__grant_ingest_privileges.sql`:
+
+```sql
+USE ROLE ACCOUNTADMIN;
+
+-- SELECT privilege for table validation
+GRANT SELECT ON TABLE PAYMENTS_DB.RAW.AUTH_EVENTS_RAW TO ROLE PAYMENTS_INGEST_ROLE;
+
+-- OPERATE privilege for Snowpipe Streaming API access
+GRANT OPERATE ON PIPE PAYMENTS_DB.RAW.AUTH_EVENTS_RAW TO ROLE PAYMENTS_INGEST_ROLE;
+```
+
+After granting privileges and restarting connector, tasks successfully opened Snowpipe Streaming channels.
+
+**Validated:** Connector logs showed:
+```
+Successfully created new Snowpipe Streaming Client
+Successfully opened streaming channel: auth_events_sink_payments_812203640_payments.auth_0
+```
+
+---
+
+## Issue 24 — Half of connector tasks FAILED despite connector RUNNING
+
+**Symptom:** Connector status shows 12 tasks RUNNING, 12 tasks FAILED. Connector overall state is RUNNING but task failures pollute status output.
+
+**Root cause:** Kafka Connect creates one task per topic partition. The topic `payments.auth` only has 1 partition, but connector config specified `tasks.max: 24`. Result:
+- 1 task assigned to partition 0 → RUNNING
+- 23 tasks with no partitions assigned → FAILED (cannot initialize without work)
+
+**Diagnosis:**
+```bash
+# Check topic partition count
+docker exec payments-kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server kafka:29092 \
+  --describe --topic payments.auth
+# Output: PartitionCount: 1
+
+# Check connector config
+curl -s http://localhost:8083/connectors/auth-events-sink-payments/config | jq -r '.["tasks.max"]'
+# Output: 24
+```
+
+**Fix:** Updated `kafka-connect/shared.json` to match partition count:
+
+```json
+{
+  "config": {
+    "tasks.max": "1"
+  }
+}
+```
+
+Applied via Kafka Connect REST API:
+```bash
+jq '.config' kafka-connect/shared.json | curl -X PUT -H "Content-Type: application/json" \
+  --data @- http://localhost:8083/connectors/auth-events-sink-payments/config
+```
+
+After update: 1 task RUNNING, 0 failed.
+
+**Best practice:** Set `tasks.max` ≤ partition count. If higher throughput needed, increase topic partitions first:
+```bash
+docker exec payments-kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server kafka:29092 \
+  --alter --topic payments.auth --partitions 24
+```
+
+---
+
+## Issue 25 — Generator container connection refused to Kafka
+
+**Symptom:** Generator container logs show repeated connection failures:
+```
+%3|FAIL|rdkafka#producer-1| localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused
+```
+
+Container is on correct Docker network (`april_live_demo_default`) but cannot reach Kafka broker.
+
+**Root cause:** Generator code defaults to `localhost:9092` via environment variable:
+```python
+# config.py
+BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+```
+
+In Docker, `localhost` resolves to the container's own loopback interface, not the Kafka broker. Generator container was started without `KAFKA_BOOTSTRAP_SERVERS` environment variable, so it used the `localhost:9092` default.
+
+**Fix:** Added generator service to `docker-compose.yml` with proper environment configuration:
+
+```yaml
+  generator:
+    build:
+      context: generator
+      dockerfile: Dockerfile
+    container_name: payments-generator
+    ports:
+      - "8001:8000"  # Mapped to 8001 to avoid conflict with existing service on 8000
+    environment:
+      # CRITICAL: Use internal Docker network hostname, not localhost
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:29092"
+      KAFKA_TOPIC: "payments.auth"
+      GENERATOR_RATE: "500"
+      GENERATOR_ENV: "dev"
+    depends_on:
+      - kafka
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+**Key Docker networking pattern:**
+- Kafka advertises two listeners:
+  - `PLAINTEXT://localhost:9092` → For host machine access
+  - `INTERNAL://kafka:29092` → For container-to-container communication
+- Producers/consumers running in Docker containers must use `kafka:29092`
+- Producers/consumers running on host machine use `localhost:9092`
+
+**Validated:** After starting with correct config:
+```bash
+docker-compose up -d generator
+curl http://localhost:8001/status
+# Output: {"events_per_sec":500,"total_events":7322,"uptime_sec":22.0}
+```
+
+Data pipeline fully operational: Generator → Kafka → HP Connector → Snowflake with 5,310+ rows ingested.
+
+---
+
+## Summary: First Successful End-to-End Data Flow
+
+**Final stack status (2026-03-31):**
+- ✅ Generator producing 500 events/sec to `payments.auth` topic
+- ✅ Kafka topic: 1 partition, receiving messages
+- ✅ HP Connector v4.x: 1 task RUNNING (matching partition count)
+- ✅ Snowflake: 5,310+ rows in `PAYMENTS_DB.RAW.AUTH_EVENTS_RAW`
+- ✅ Metadata columns populated: `SOURCE_TOPIC`, `SOURCE_PARTITION`, `SOURCE_OFFSET`, `INGESTED_AT`
+
+**Key lessons:**
+1. HP Connector v4.x requires `OPERATE` (not just `MONITOR`) on pipes for Snowpipe Streaming API
+2. HP Connector requires `SELECT` (not just `INSERT`) on tables
+3. Connector `tasks.max` should match or be less than topic partition count
+4. Docker containers must use internal network hostnames (`kafka:29092`), not `localhost:9092`
+5. User-defined pipes required for extracting `RECORD_METADATA` into metadata columns
+
+---
+
+## Issue 26 — No data displaying in SPCS app (`NameResolutionError` on Snowflake connection)
+
+**Symptom:** SPCS service `PAYMENT_DASHBOARD` shows `RUNNING` with 1 ready instance and the `/health` probe returns `200 OK`. However, every API route (`/api/v1/filters`, `/api/v1/summary`, etc.) returns HTTP 500. The dashboard renders but all panels are empty.
+
+**Diagnosis:** Retrieved container logs with `SYSTEM$GET_SERVICE_LOGS`:
+
+```
+snowflake.connector.errors.OperationalError: 250001: Could not connect to Snowflake
+backend after 2 attempt(s). Aborting
+
+socket.gaierror: [Errno -2] Name or service not known
+
+Failed to resolve 'fnb70636.snowflakecomputing.com' ([Errno -2] Name or service not known)
+```
+
+The data pipeline was confirmed healthy throughout — `PAYMENTS_DB.RAW.AUTH_EVENTS_RAW` had 161,169 rows, `SERVE.IT_AUTH_MINUTE_METRICS` had 65,145 rows, and `SERVE.IT_AUTH_EVENT_SEARCH` had 153,118 rows.
+
+**Root cause:** `app/backend/snowflake_client.py` built the Snowflake connection using only the `account` parameter:
+
+```python
+base_params = {
+    "account": SNOWFLAKE_ACCOUNT,   # e.g. "fnb70636"
+    ...
+}
+```
+
+The Snowflake Python connector derives the connection hostname from `account` as `fnb70636.snowflakecomputing.com` — the **public internet endpoint**. SPCS containers have no external network egress by default; the service spec had no External Access Integration attached (`external_access_integrations: None` in `SHOW SERVICES` output), so all outbound DNS resolution for public hostnames fails.
+
+SPCS automatically injects a `SNOWFLAKE_HOST` environment variable into every container with the **internal** Snowflake endpoint reachable from the container network. The code never read this variable.
+
+**Fix:** Added `SNOWFLAKE_HOST` to `app/backend/snowflake_client.py` and passed it as `host` in `_create_connection`. When `SNOWFLAKE_HOST` is set (SPCS production), the connector routes via the internal network. When unset (local development), the parameter is omitted and the connector falls back to the public endpoint — fully backwards-compatible.
+
+```python
+# Module-level (alongside existing SNOWFLAKE_ACCOUNT)
+SNOWFLAKE_HOST = os.getenv("SNOWFLAKE_HOST", "")
+
+# In _create_connection():
+base_params = {
+    "account": SNOWFLAKE_ACCOUNT,
+    "database": SNOWFLAKE_DATABASE,
+    "schema": schema,
+    "warehouse": warehouse,
+    "role": SNOWFLAKE_ROLE,
+}
+if SNOWFLAKE_HOST:
+    base_params["host"] = SNOWFLAKE_HOST
+```
+
+**Redeployment:**
+
+```bash
+# Login to registry
+snow spcs image-registry login --connection business_critical
+
+# Rebuild with correct platform flag (see Issue 16)
+docker build --platform linux/amd64 \
+  -t sfpscogs-slafell-aws-2.registry.snowflakecomputing.com/payments_db/app/dashboard_repo/payment-command-center:latest \
+  ./app
+
+# Push
+docker push sfpscogs-slafell-aws-2.registry.snowflakecomputing.com/payments_db/app/dashboard_repo/payment-command-center:latest
+
+# Restart service to pull new image
+ALTER SERVICE PAYMENTS_DB.APP.PAYMENT_DASHBOARD SUSPEND;
+ALTER SERVICE PAYMENTS_DB.APP.PAYMENT_DASHBOARD RESUME;
+```
+
+**Validation:** Post-restart logs showed clean startup with no `NameResolutionError`. All health probes returning `200 OK` with no 500s.
+
+**Note on `ALTER SERVICE ... UPGRADE`:** This syntax does not exist in Snowflake SQL. Use `SUSPEND` + `RESUME` to force a fresh image pull when the spec itself has not changed.
+
+**Key lesson:** SPCS containers must connect to Snowflake via `SNOWFLAKE_HOST` (internal endpoint), not via the account-derived public hostname. The `SNOWFLAKE_HOST` env var is always injected by SPCS — always include it in connection params when writing SPCS-hosted Snowflake connectors.
+
+**Additional lesson:** Do NOT manually set `SNOWFLAKE_HOST` or `SNOWFLAKE_ACCOUNT` in `service_spec.yaml`. Setting them overrides the SPCS-injected internal values with the public URL, which is not DNS-resolvable from inside the container. The service spec should omit both — SPCS injects the correct internal endpoint automatically.
+
+---
+
+## Issue 27 — `010402 (55000): Table IT_AUTH_MINUTE_METRICS is not bound to the current warehouse`
+
+**Symptom:** SPCS service `PAYMENT_DASHBOARD` is READY, `/health` returns 200, Snowflake auth succeeds (SPCS OAuth issue from Issue 26 is resolved), but every data API route returns HTTP 500:
+```
+snowflake.connector.errors.ProgrammingError: 010402 (55000):
+Table IT_AUTH_MINUTE_METRICS is not bound to the current warehouse.
+```
+
+Dashboard panels all show `--`. Interactive Tables `IT_AUTH_MINUTE_METRICS` and `IT_AUTH_EVENT_SEARCH` both exist with hundreds of thousands of rows and are actively refreshing. `PAYMENTS_INTERACTIVE_WH` is STARTED.
+
+**Root cause:** Interactive Tables require an **explicit one-time binding** to an Interactive Warehouse before queries through that warehouse succeed. This is done via:
+```sql
+ALTER WAREHOUSE <interactive_wh> ADD TABLES (<table1>, <table2>);
+```
+
+Per Snowflake docs: *"Before you can query the interactive table from an interactive warehouse, you must perform a one-time operation to add the interactive table to the interactive warehouse."*
+
+This step was never performed. `SHOW WAREHOUSES LIKE 'PAYMENTS_INTERACTIVE_WH'` showed `tables = None`.
+
+Schemachange migration `V1.3.0` was titled "create interactive warehouse table assoc" but only ran `ALTER WAREHOUSE PAYMENTS_INTERACTIVE_WH RESUME IF SUSPENDED`. The `ADD TABLES` step was omitted, based on the incorrect conclusion at the time (Issue 7) that no explicit association DDL existed in Snowflake. That conclusion was wrong.
+
+The Terraform `warehouses.tf` resource uses `CREATE OR REPLACE INTERACTIVE WAREHOUSE` with no `TABLES (...)` clause, which also does not perform the binding.
+
+**Fix:** Added schemachange migration `V1.8.0__bind_interactive_tables_to_warehouse.sql`:
+
+```sql
+USE ROLE PAYMENTS_ADMIN_ROLE;
+USE WAREHOUSE PAYMENTS_ADMIN_WH;
+
+ALTER WAREHOUSE PAYMENTS_INTERACTIVE_WH
+  ADD TABLES (
+    PAYMENTS_DB.SERVE.IT_AUTH_MINUTE_METRICS,
+    PAYMENTS_DB.SERVE.IT_AUTH_EVENT_SEARCH
+  );
+```
+
+This command is idempotent — if the table is already associated, the command succeeds with no effect. Safe to re-run.
+
+**Why Terraform `TABLES (...)` clause was not used:** The interactive tables are created by schemachange (V1.2.0), which runs *after* Terraform in the CI/CD pipeline. Adding `TABLES (...)` to the `CREATE OR REPLACE INTERACTIVE WAREHOUSE` DDL in Terraform would fail on a fresh deploy because the tables do not yet exist at Terraform apply time. The binding must happen in schemachange, after table creation.
+
+**Correct deployment order for interactive tables:**
+1. Terraform: create `PAYMENTS_INTERACTIVE_WH` (no TABLES clause)
+2. schemachange V1.2.0: create `IT_AUTH_MINUTE_METRICS`, `IT_AUTH_EVENT_SEARCH`
+3. schemachange V1.3.0: resume `PAYMENTS_INTERACTIVE_WH`
+4. **schemachange V1.8.0: bind tables to warehouse** ← this was the missing step
+5. Queries from `PAYMENTS_APP_ROLE` via `PAYMENTS_INTERACTIVE_WH` now succeed
+
+**Key lesson:** Interactive Tables are NOT automatically bound to an Interactive Warehouse. The `ALTER WAREHOUSE ... ADD TABLES (...)` step is mandatory and must come after both the warehouse and the tables exist. The limit is 10 tables per interactive warehouse.

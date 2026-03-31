@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Payment Command Center — Data Flow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0e17;--bg2:#0f1420;--bg3:#141a2a;
+  --surface:#1a2136;--surface2:#1e2740;
+  --cyan:#00e5ff;--cyan-dim:#00e5ff44;--cyan-glow:#00e5ff22;
+  --amber:#ffab00;--amber-dim:#ffab0044;
+  --green:#00e676;--green-dim:#00e67644;
+  --red:#ff5252;--red-dim:#ff525244;
+  --purple:#b388ff;--purple-dim:#b388ff44;
+  --text:#e8eaf6;--text2:#9fa8c7;--text3:#5c6688;
+  --mono:'JetBrains Mono',monospace;
+  --sans:'Outfit',sans-serif;
+  --border:#ffffff0a;
+}
+html{scroll-behavior:smooth;font-size:16px}
+body{
+  background:var(--bg);color:var(--text);
+  font-family:var(--sans);line-height:1.6;
+  overflow-x:hidden;
+}
+/* Grain overlay */
+body::after{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  background-repeat:repeat;background-size:256px 256px;
+  opacity:.4;
+}
+::selection{background:var(--cyan);color:var(--bg)}
+
+/* ─── HERO ─── */
+.hero{
+  min-height:100vh;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  position:relative;text-align:center;
+  padding:2rem;
+}
+.hero::before{
+  content:'';position:absolute;inset:0;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 0%,var(--cyan-glow),transparent),
+    radial-gradient(ellipse 60% 40% at 20% 80%,#b388ff0c,transparent),
+    radial-gradient(ellipse 60% 40% at 80% 80%,#ffab000a,transparent);
+  pointer-events:none;
+}
+.hero-badge{
+  font-family:var(--mono);font-size:.75rem;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--cyan);
+  border:1px solid var(--cyan-dim);border-radius:100px;
+  padding:.4rem 1.2rem;margin-bottom:2rem;
+  animation:fadeUp .8s ease both;
+}
+.hero h1{
+  font-size:clamp(2.5rem,6vw,5rem);font-weight:800;
+  letter-spacing:-.03em;line-height:1.05;
+  background:linear-gradient(135deg,var(--text) 0%,var(--cyan) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+  animation:fadeUp .8s ease .15s both;
+  max-width:900px;
+}
+.hero p{
+  font-size:1.15rem;color:var(--text2);max-width:600px;
+  margin-top:1.5rem;
+  animation:fadeUp .8s ease .3s both;
+}
+.hero-latency{
+  display:flex;gap:3rem;margin-top:3rem;
+  animation:fadeUp .8s ease .45s both;
+}
+.hero-latency .stat{text-align:center}
+.hero-latency .stat-val{
+  font-family:var(--mono);font-size:2rem;font-weight:600;
+}
+.hero-latency .stat-val.cyan{color:var(--cyan)}
+.hero-latency .stat-val.amber{color:var(--amber)}
+.hero-latency .stat-val.green{color:var(--green)}
+.hero-latency .stat-label{
+  font-size:.75rem;color:var(--text3);text-transform:uppercase;
+  letter-spacing:.1em;margin-top:.25rem;
+}
+.scroll-hint{
+  position:absolute;bottom:2rem;
+  animation:bounce 2s ease infinite;
+  color:var(--text3);font-size:.8rem;letter-spacing:.1em;
+}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+
+/* ─── SECTIONS ─── */
+section{padding:6rem 2rem;position:relative}
+.container{max-width:1200px;margin:0 auto}
+.section-num{
+  font-family:var(--mono);font-size:.7rem;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--cyan);
+  margin-bottom:.75rem;display:block;
+}
+.section-title{
+  font-size:clamp(1.8rem,4vw,2.8rem);font-weight:700;
+  letter-spacing:-.02em;margin-bottom:1rem;
+}
+.section-sub{color:var(--text2);font-size:1.05rem;max-width:700px;margin-bottom:3rem}
+
+/* ─── FLOW DIAGRAM ─── */
+.flow{display:flex;flex-direction:column;align-items:center;gap:0;position:relative}
+.flow-node{
+  position:relative;z-index:2;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:16px;padding:1.5rem 2rem;
+  min-width:320px;max-width:480px;width:100%;
+  transition:border-color .3s,box-shadow .3s;
+}
+.flow-node:hover{
+  border-color:var(--cyan-dim);
+  box-shadow:0 0 40px var(--cyan-glow);
+}
+.flow-node .node-icon{
+  font-size:1.5rem;margin-bottom:.5rem;display:block;
+}
+.flow-node h3{font-size:1.1rem;font-weight:600;margin-bottom:.25rem}
+.flow-node .node-tech{
+  font-family:var(--mono);font-size:.75rem;color:var(--cyan);
+  margin-bottom:.5rem;
+}
+.flow-node .node-desc{font-size:.85rem;color:var(--text2);line-height:1.5}
+.flow-connector{
+  width:2px;height:48px;position:relative;z-index:1;
+  background:linear-gradient(to bottom,var(--cyan-dim),var(--cyan),var(--cyan-dim));
+}
+.flow-connector::after{
+  content:'';position:absolute;left:50%;bottom:0;
+  transform:translateX(-50%);
+  width:0;height:0;
+  border-left:6px solid transparent;border-right:6px solid transparent;
+  border-top:8px solid var(--cyan);
+}
+.flow-latency{
+  font-family:var(--mono);font-size:.7rem;
+  color:var(--amber);background:var(--bg);
+  padding:.15rem .6rem;border-radius:100px;
+  border:1px solid var(--amber-dim);
+  position:absolute;right:-80px;top:50%;transform:translateY(-50%);
+  white-space:nowrap;
+}
+.flow-branch{
+  display:grid;grid-template-columns:1fr 1fr;gap:2rem;
+  width:100%;max-width:700px;position:relative;z-index:2;
+}
+.flow-branch::before{
+  content:'';position:absolute;top:-24px;left:25%;right:25%;
+  height:24px;border-top:2px solid var(--cyan-dim);
+  border-left:2px solid var(--cyan-dim);border-right:2px solid var(--cyan-dim);
+  border-radius:0;
+}
+.flow-branch .flow-node{min-width:auto}
+.flow-merge{
+  width:100%;max-width:700px;position:relative;
+}
+.flow-merge::before{
+  content:'';position:absolute;bottom:100%;left:25%;right:25%;
+  height:24px;border-bottom:2px solid var(--cyan-dim);
+  border-left:2px solid var(--cyan-dim);border-right:2px solid var(--cyan-dim);
+}
+
+/* ─── HOP CARDS ─── */
+.hops{display:flex;flex-direction:column;gap:4rem}
+.hop{
+  display:grid;grid-template-columns:200px 1fr;gap:3rem;
+  align-items:start;
+  opacity:0;transform:translateY(30px);
+  transition:opacity .6s ease,transform .6s ease;
+}
+.hop.visible{opacity:1;transform:translateY(0)}
+.hop-meta{position:sticky;top:2rem}
+.hop-num{
+  font-family:var(--mono);font-size:3rem;font-weight:700;
+  line-height:1;margin-bottom:.5rem;
+}
+.hop-num.c1{color:var(--cyan)}
+.hop-num.c2{color:var(--green)}
+.hop-num.c3{color:var(--amber)}
+.hop-num.c4{color:var(--purple)}
+.hop-num.c5{color:var(--red)}
+.hop-label{
+  font-size:.7rem;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--text3);margin-bottom:1rem;
+}
+.hop-latency-badge{
+  font-family:var(--mono);font-size:.8rem;
+  padding:.3rem .8rem;border-radius:8px;
+  display:inline-block;
+}
+.hop-latency-badge.fast{background:var(--green-dim);color:var(--green)}
+.hop-latency-badge.med{background:var(--amber-dim);color:var(--amber)}
+.hop-latency-badge.slow{background:var(--red-dim);color:var(--red)}
+.hop-content{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:16px;padding:2rem 2.5rem;
+}
+.hop-content h3{font-size:1.3rem;font-weight:600;margin-bottom:.75rem}
+.hop-content p{color:var(--text2);margin-bottom:1rem;font-size:.95rem}
+
+/* Code blocks */
+.code-block{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:10px;padding:1.25rem 1.5rem;
+  font-family:var(--mono);font-size:.78rem;
+  line-height:1.7;color:var(--text2);
+  overflow-x:auto;margin:1rem 0;
+  white-space:pre;
+}
+.code-block .kw{color:var(--purple)}
+.code-block .str{color:var(--green)}
+.code-block .num{color:var(--amber)}
+.code-block .cm{color:var(--text3)}
+.code-block .fn{color:var(--cyan)}
+
+/* Tables */
+.info-table{width:100%;border-collapse:collapse;margin:1rem 0;font-size:.85rem}
+.info-table th{
+  text-align:left;font-weight:500;color:var(--text3);
+  font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;
+  padding:.5rem .75rem;border-bottom:1px solid var(--border);
+}
+.info-table td{
+  padding:.6rem .75rem;border-bottom:1px solid var(--border);
+  color:var(--text2);vertical-align:top;
+}
+.info-table td:first-child{
+  font-family:var(--mono);font-size:.8rem;color:var(--text);
+  white-space:nowrap;
+}
+.info-table tr:last-child td{border-bottom:none}
+
+/* Tags */
+.tag{
+  display:inline-block;font-family:var(--mono);font-size:.7rem;
+  padding:.15rem .5rem;border-radius:4px;margin:.15rem .15rem;
+  white-space:nowrap;
+}
+.tag-cyan{background:var(--cyan-glow);color:var(--cyan);border:1px solid var(--cyan-dim)}
+.tag-green{background:var(--green-dim);color:var(--green);border:1px solid var(--green-dim)}
+.tag-amber{background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-dim)}
+.tag-purple{background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple-dim)}
+
+/* ─── LATENCY BUDGET ─── */
+.latency-bar{
+  display:grid;grid-template-columns:140px 1fr 80px;
+  align-items:center;gap:1rem;
+  padding:.75rem 0;border-bottom:1px solid var(--border);
+}
+.latency-bar:last-child{border-bottom:none}
+.latency-bar .bar-label{font-size:.85rem;color:var(--text)}
+.latency-bar .bar-track{
+  height:8px;background:var(--bg2);border-radius:100px;
+  overflow:hidden;position:relative;
+}
+.latency-bar .bar-fill{
+  height:100%;border-radius:100px;
+  transition:width 1s ease;
+}
+.latency-bar .bar-value{
+  font-family:var(--mono);font-size:.8rem;text-align:right;
+}
+
+/* ─── ROLE MAP ─── */
+.role-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1.5rem}
+.role-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:1.5rem;
+  transition:border-color .3s;
+}
+.role-card:hover{border-color:var(--cyan-dim)}
+.role-card h4{font-size:.95rem;font-weight:600;margin-bottom:.5rem}
+.role-card .role-name{
+  font-family:var(--mono);font-size:.75rem;color:var(--cyan);
+  margin-bottom:.75rem;
+}
+.role-card p{font-size:.8rem;color:var(--text2);line-height:1.5}
+
+/* ─── SCHEMA LINEAGE ─── */
+.lineage{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:16px;padding:2rem;overflow-x:auto;
+}
+.lineage-row{
+  display:grid;
+  grid-template-columns:160px 20px 180px 20px 200px 20px 180px;
+  gap:0;align-items:center;
+  padding:.35rem 0;font-size:.78rem;font-family:var(--mono);
+}
+.lineage-row.header{
+  color:var(--text3);font-size:.65rem;text-transform:uppercase;
+  letter-spacing:.1em;padding-bottom:.75rem;
+  border-bottom:1px solid var(--border);margin-bottom:.5rem;
+  font-family:var(--sans);font-weight:500;
+}
+.lineage-arrow{color:var(--cyan-dim);text-align:center}
+.lineage-col{color:var(--text2)}
+.lineage-col.src{color:var(--green)}
+.lineage-col.raw{color:var(--text)}
+.lineage-col.met{color:var(--amber)}
+.lineage-col.evt{color:var(--purple)}
+
+/* ─── COMPONENT MAP ─── */
+.comp-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1rem;
+}
+.comp-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;padding:1.25rem;
+  display:flex;gap:1rem;align-items:flex-start;
+  transition:border-color .3s,transform .3s;
+}
+.comp-card:hover{border-color:var(--cyan-dim);transform:translateY(-2px)}
+.comp-icon{
+  font-size:1.5rem;flex-shrink:0;
+  width:40px;height:40px;display:flex;
+  align-items:center;justify-content:center;
+  border-radius:10px;background:var(--bg2);
+}
+.comp-card h4{font-size:.9rem;font-weight:600;margin-bottom:.2rem}
+.comp-card .comp-endpoint{
+  font-family:var(--mono);font-size:.7rem;color:var(--cyan);
+  margin-bottom:.25rem;
+}
+.comp-card p{font-size:.78rem;color:var(--text2)}
+
+/* ─── FOOTER ─── */
+footer{
+  text-align:center;padding:4rem 2rem;
+  color:var(--text3);font-size:.8rem;
+  border-top:1px solid var(--border);
+}
+
+/* ─── ANIMATIONS ─── */
+@keyframes fadeUp{
+  from{opacity:0;transform:translateY(20px)}
+  to{opacity:1;transform:translateY(0)}
+}
+@keyframes pulse{
+  0%,100%{opacity:.6}50%{opacity:1}
+}
+.pulse{animation:pulse 2s ease infinite}
+
+/* ─── NAV ─── */
+.toc{
+  position:fixed;right:1.5rem;top:50%;transform:translateY(-50%);
+  z-index:100;display:flex;flex-direction:column;gap:.5rem;
+}
+.toc a{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--text3);display:block;
+  transition:background .3s,transform .3s;
+  text-decoration:none;
+}
+.toc a:hover,.toc a.active{background:var(--cyan);transform:scale(1.5)}
+
+/* ─── DIVIDER ─── */
+.divider{
+  height:1px;max-width:200px;margin:0 auto;
+  background:linear-gradient(to right,transparent,var(--cyan-dim),transparent);
+}
+
+/* ─── RESPONSIVE ─── */
+@media(max-width:768px){
+  .hop{grid-template-columns:1fr;gap:1rem}
+  .hop-meta{position:static;display:flex;align-items:center;gap:1rem}
+  .hop-num{font-size:2rem}
+  .flow-branch{grid-template-columns:1fr}
+  .flow-branch::before{display:none}
+  .flow-merge::before{display:none}
+  .lineage-row{grid-template-columns:1fr;gap:.25rem}
+  .lineage-arrow{display:none}
+  .lineage-row.header{display:none}
+  .toc{display:none}
+  .hero-latency{gap:1.5rem}
+  .hero-latency .stat-val{font-size:1.4rem}
+  .flow-latency{position:static;transform:none;margin:.25rem auto;display:block;text-align:center;width:fit-content}
+}
+</style>
+</head>
+<body>
+
+<!-- NAV DOTS -->
+<nav class="toc" id="toc"></nav>
+
+<!-- ═══════════════ HERO ═══════════════ -->
+<section class="hero" id="top">
+  <div class="hero-badge">Payment Authorization Command Center</div>
+  <h1>Data Flow Architecture</h1>
+  <p>Tracing every hop from synthetic event generation to live dashboard pixel &mdash; with sub-minute serving latency on Snowflake.</p>
+  <div class="hero-latency">
+    <div class="stat">
+      <div class="stat-val cyan">~65s</div>
+      <div class="stat-label">End-to-End</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val green">5-10s</div>
+      <div class="stat-label">Ingest Latency</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val amber">60s</div>
+      <div class="stat-label">Serve Refresh</div>
+    </div>
+  </div>
+  <div class="scroll-hint">&#8595; SCROLL TO EXPLORE</div>
+</section>
+
+<!-- ═══════════════ PIPELINE OVERVIEW ═══════════════ -->
+<section id="pipeline">
+  <div class="container">
+    <span class="section-num">01 &mdash; Pipeline Overview</span>
+    <h2 class="section-title">End-to-End Data Flow</h2>
+    <p class="section-sub">Data moves through five hops, two ingest paths, and branches into parallel hot + analytical serving layers.</p>
+
+    <div class="flow">
+      <!-- Generator -->
+      <div class="flow-node">
+        <span class="node-icon">&#9889;</span>
+        <h3>Event Generator</h3>
+        <div class="node-tech">generator/producer.py &middot; confluent_kafka</div>
+        <div class="node-desc">500-2,000 synthetic payment auth events/sec. JSON messages keyed by merchant_id with zstd compression.</div>
+      </div>
+
+      <div class="flow-connector" style="position:relative">
+        <span class="flow-latency">&lt; 1ms</span>
+      </div>
+
+      <!-- Kafka -->
+      <div class="flow-node">
+        <span class="node-icon">&#128230;</span>
+        <h3>Kafka Topic: payments.auth</h3>
+        <div class="node-tech">Apache Kafka 4.0 (KRaft) &middot; 24 partitions &middot; 72h retention</div>
+        <div class="node-desc">Single shared topic for all environments. Partition key = merchant_id ensures per-merchant ordering.</div>
+      </div>
+
+      <div class="flow-connector"></div>
+
+      <!-- Ingest Branch -->
+      <div class="flow-branch">
+        <div class="flow-node" style="border-color:var(--green-dim)">
+          <span class="node-icon">&#9889;</span>
+          <h3>HP Connector v4.x</h3>
+          <div class="node-tech" style="color:var(--green)">Snowpipe Streaming &middot; Primary Path</div>
+          <div class="node-desc">Real-time streaming sink with user-defined pipe. Extracts RECORD_METADATA for Kafka lineage.</div>
+          <div style="margin-top:.5rem"><span class="tag tag-green">5-10s latency</span></div>
+        </div>
+        <div class="flow-node" style="border-color:var(--amber-dim)">
+          <span class="node-icon">&#128296;</span>
+          <h3>Python Batch Relay</h3>
+          <div class="node-tech" style="color:var(--amber)">fallback_ingest/ &middot; write_pandas</div>
+          <div class="node-desc">Batch consumer with configurable flush (1,000 rows / 5s). Activated if HP connector unavailable.</div>
+          <div style="margin-top:.5rem"><span class="tag tag-amber">1-3 min latency</span></div>
+        </div>
+      </div>
+
+      <div class="flow-connector"></div>
+
+      <!-- RAW -->
+      <div class="flow-node">
+        <span class="node-icon">&#128451;</span>
+        <h3>PAYMENTS_DB.RAW.AUTH_EVENTS_RAW</h3>
+        <div class="node-tech">Snowflake Standard Table &middot; 22 columns &middot; 14-day retention</div>
+        <div class="node-desc">Shared landing table for all environments. Logical isolation via <code style="color:var(--cyan)">env</code> column (dev / preprod / prod). Kafka metadata preserved.</div>
+      </div>
+
+      <div class="flow-connector"></div>
+
+      <!-- Serve Branch -->
+      <div class="flow-branch">
+        <div class="flow-node" style="border-color:var(--cyan-dim)">
+          <span class="node-icon">&#128200;</span>
+          <h3>Interactive Tables (SERVE)</h3>
+          <div class="node-tech">HOT PATH &middot; 60s TARGET_LAG</div>
+          <div class="node-desc">
+            <strong>IT_AUTH_MINUTE_METRICS</strong> &mdash; 22 cols, minute-level agg, 2hr window<br>
+            <strong>IT_AUTH_EVENT_SEARCH</strong> &mdash; 16 cols, event-level, 60min window
+          </div>
+          <div style="margin-top:.5rem">
+            <span class="tag tag-cyan">Dashboard serving</span>
+          </div>
+        </div>
+        <div class="flow-node" style="border-color:var(--purple-dim)">
+          <span class="node-icon">&#129518;</span>
+          <h3>dbt Dynamic Tables (CURATED)</h3>
+          <div class="node-tech" style="color:var(--purple)">Parallel Analytical Path</div>
+          <div class="node-desc">
+            <strong>dt_auth_enriched</strong> &mdash; 5 min lag<br>
+            <strong>dt_auth_hourly</strong> &mdash; 30 min lag<br>
+            <strong>dt_auth_daily</strong> &mdash; 1 hr lag
+          </div>
+          <div style="margin-top:.5rem"><span class="tag tag-purple">BI / ML consumption</span></div>
+        </div>
+      </div>
+
+      <div class="flow-connector"></div>
+
+      <!-- Backend -->
+      <div class="flow-node">
+        <span class="node-icon">&#9881;</span>
+        <h3>FastAPI Backend</h3>
+        <div class="node-tech">app/backend/ &middot; Dual Warehouse Routing</div>
+        <div class="node-desc">6 API endpoints. Interactive WH for SERVE queries, Admin WH for RAW freshness. SPCS token auth in production.</div>
+        <div style="margin-top:.5rem"><span class="tag tag-cyan">~100-200ms</span></div>
+      </div>
+
+      <div class="flow-connector"></div>
+
+      <!-- Dashboard -->
+      <div class="flow-node" style="border-color:var(--cyan-dim);box-shadow:0 0 60px var(--cyan-glow)">
+        <span class="node-icon">&#128187;</span>
+        <h3>React Dashboard</h3>
+        <div class="node-tech">React 18 + TypeScript + Tailwind &middot; SPCS Container</div>
+        <div class="node-desc">8 components: KPI cards, time series, breakdown drilldown, latency histogram, freshness indicator. Single container on port 8080.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══════════════ HOP DETAILS ═══════════════ -->
+<section id="hops">
+  <div class="container">
+    <span class="section-num">02 &mdash; Hop-by-Hop Details</span>
+    <h2 class="section-title">Inside Each Stage</h2>
+    <p class="section-sub">Configuration, schemas, and transformation logic at every data boundary.</p>
+
+    <div class="hops">
+      <!-- HOP 1 -->
+      <div class="hop" id="hop1">
+        <div class="hop-meta">
+          <div>
+            <div class="hop-num c1">01</div>
+            <div class="hop-label">Generator &rarr; Kafka</div>
+            <span class="hop-latency-badge fast">&lt; 1ms</span>
+          </div>
+        </div>
+        <div class="hop-content">
+          <h3>Event Generation &amp; Kafka Producer</h3>
+          <p>A Python generator produces 16-field JSON events representing synthetic card authorization attempts. Events are sent to Kafka via <code>confluent_kafka.Producer</code> with merchant_id as the partition key.</p>
+
+          <div class="code-block"><span class="fn">Producer</span>({
+    <span class="str">"bootstrap.servers"</span>: BOOTSTRAP_SERVERS,
+    <span class="str">"compression.type"</span>: <span class="str">"zstd"</span>,
+    <span class="str">"acks"</span>: <span class="str">"all"</span>,
+    <span class="str">"linger.ms"</span>: <span class="num">5</span>,
+    <span class="str">"batch.size"</span>: <span class="num">16384</span>,
+})</div>
+
+          <table class="info-table">
+            <tr><th>Property</th><th>Value</th></tr>
+            <tr><td>Topic</td><td>payments.auth</td></tr>
+            <tr><td>Partitions</td><td>24</td></tr>
+            <tr><td>Retention</td><td>72 hours</td></tr>
+            <tr><td>Compression</td><td>zstd (end-to-end)</td></tr>
+            <tr><td>Baseline rate</td><td>500 events/sec</td></tr>
+            <tr><td>Peak rate</td><td>2,000 events/sec</td></tr>
+          </table>
+
+          <h4 style="font-size:.9rem;margin-top:1.5rem;margin-bottom:.75rem;color:var(--text)">Scenario Profiles</h4>
+          <table class="info-table">
+            <tr><th>Scenario</th><th>Target</th><th>Effect</th></tr>
+            <tr><td>baseline</td><td>All</td><td>~95% approval, 50-150ms latency</td></tr>
+            <tr><td>issuer_outage</td><td>BIN 4111xx</td><td>90% decline, ISSUER_UNAVAILABLE</td></tr>
+            <tr><td>merchant_decline_spike</td><td>M0003</td><td>60% decline, DO_NOT_HONOR</td></tr>
+            <tr><td>latency_spike</td><td>EU region</td><td>800-2000ms latency</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- HOP 2 -->
+      <div class="hop" id="hop2">
+        <div class="hop-meta">
+          <div>
+            <div class="hop-num c2">02</div>
+            <div class="hop-label">Kafka &rarr; Snowflake RAW</div>
+            <span class="hop-latency-badge fast">5-10s</span>
+          </div>
+        </div>
+        <div class="hop-content">
+          <h3>Snowpipe Streaming via HP Connector</h3>
+          <p>The HP Kafka Connector v4.x operates in <strong>user-defined pipe mode</strong>. A Terraform-managed pipe controls column mapping and extracts <code>RECORD_METADATA</code> for Kafka lineage tracking.</p>
+
+          <div class="code-block"><span class="cm">-- terraform/pipes.tf (COPY INTO mapping)</span>
+<span class="kw">SELECT</span>
+    $1:env::<span class="fn">VARCHAR</span>(<span class="num">16</span>),
+    $1:event_ts::<span class="fn">TIMESTAMP_NTZ</span>,
+    $1:event_id::<span class="fn">VARCHAR</span>(<span class="num">64</span>),
+    <span class="cm">-- ... 13 more business columns ...</span>
+    $1:RECORD_METADATA:topic::<span class="fn">VARCHAR</span>(<span class="num">128</span>),
+    $1:RECORD_METADATA:partition::<span class="fn">NUMBER</span>,
+    $1:RECORD_METADATA:offset::<span class="fn">NUMBER</span>,
+    <span class="fn">CURRENT_TIMESTAMP</span>()
+<span class="kw">FROM TABLE</span>(<span class="fn">DATA_SOURCE</span>(<span class="str">TYPE => 'STREAMING'</span>))</div>
+
+          <p style="font-size:.85rem;color:var(--text3);margin-top:.5rem"><strong style="color:var(--amber)">Why Terraform manages the pipe:</strong> <code>CREATE OR REPLACE PIPE</code> invalidates the active streaming channel. Terraform's <code>IF NOT EXISTS</code> is idempotent and safe.</p>
+
+          <table class="info-table">
+            <tr><th>Config</th><th>Value</th></tr>
+            <tr><td>connector.class</td><td>SnowflakeStreamingSinkConnector</td></tr>
+            <tr><td>tasks.max</td><td>1</td></tr>
+            <tr><td>role</td><td>PAYMENTS_INGEST_ROLE</td></tr>
+            <tr><td>topic2table.map</td><td>payments.auth:AUTH_EVENTS_RAW</td></tr>
+            <tr><td>metadata</td><td>topic + offset + partition</td></tr>
+            <tr><td>errors.tolerance</td><td>all (log, don't stop)</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- HOP 3 -->
+      <div class="hop" id="hop3">
+        <div class="hop-meta">
+          <div>
+            <div class="hop-num c3">03</div>
+            <div class="hop-label">RAW &rarr; SERVE</div>
+            <span class="hop-latency-badge med">60s</span>
+          </div>
+        </div>
+        <div class="hop-content">
+          <h3>Interactive Tables &mdash; Hot Serving Path</h3>
+          <p>Two interactive tables materialize from RAW with 60-second TARGET_LAG. <code>PAYMENTS_REFRESH_WH</code> (standard) materializes; <code>PAYMENTS_INTERACTIVE_WH</code> (interactive) serves queries.</p>
+
+          <h4 style="font-size:.9rem;margin:1.5rem 0 .75rem;color:var(--text)">IT_AUTH_MINUTE_METRICS (22 columns)</h4>
+          <p>Minute-level aggregates with deduplication. 2-hour rolling window.</p>
+          <div style="display:flex;flex-wrap:wrap;gap:.25rem;margin:.75rem 0">
+            <span class="tag tag-cyan">event_minute</span>
+            <span class="tag tag-cyan">env</span>
+            <span class="tag tag-cyan">merchant_id</span>
+            <span class="tag tag-cyan">region</span>
+            <span class="tag tag-cyan">card_brand</span>
+            <span class="tag tag-cyan">issuer_bin</span>
+            <span class="tag tag-amber">event_count</span>
+            <span class="tag tag-amber">decline_count</span>
+            <span class="tag tag-amber">approval_count</span>
+            <span class="tag tag-amber">error_count</span>
+            <span class="tag tag-amber">latency_sum_ms</span>
+            <span class="tag tag-amber">6 histogram buckets</span>
+            <span class="tag tag-amber">total_amount</span>
+          </div>
+          <p style="font-size:.82rem;color:var(--text3)">Latency stored as SUM/COUNT for correct weighted reaggregation across dimension slices.</p>
+
+          <h4 style="font-size:.9rem;margin:1.5rem 0 .75rem;color:var(--text)">IT_AUTH_EVENT_SEARCH (16 columns)</h4>
+          <p>Event-level records for drill-down. 60-minute rolling window, deduplicated, ordered by event_ts DESC.</p>
+          <div style="display:flex;flex-wrap:wrap;gap:.25rem;margin:.75rem 0">
+            <span class="tag tag-purple">event_ts</span>
+            <span class="tag tag-purple">event_id</span>
+            <span class="tag tag-purple">payment_id</span>
+            <span class="tag tag-purple">merchant_id</span>
+            <span class="tag tag-purple">auth_status</span>
+            <span class="tag tag-purple">decline_code</span>
+            <span class="tag tag-purple">auth_latency_ms</span>
+            <span class="tag tag-purple">+ 9 dimension cols</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- HOP 4 -->
+      <div class="hop" id="hop4">
+        <div class="hop-meta">
+          <div>
+            <div class="hop-num c4">04</div>
+            <div class="hop-label">Snowflake &rarr; FastAPI</div>
+            <span class="hop-latency-badge fast">~150ms</span>
+          </div>
+        </div>
+        <div class="hop-content">
+          <h3>Dual Warehouse Routing</h3>
+          <p>The FastAPI backend maintains two connection pools. Interactive WH can <strong>only</strong> query interactive tables; the standard WH handles freshness checks on the raw landing table.</p>
+
+          <table class="info-table">
+            <tr><th>Endpoint</th><th>Source Table</th><th>Purpose</th></tr>
+            <tr><td>/api/v1/summary</td><td>IT_AUTH_MINUTE_METRICS + RAW</td><td>KPI cards with current vs previous window</td></tr>
+            <tr><td>/api/v1/timeseries</td><td>IT_AUTH_MINUTE_METRICS</td><td>Minute-bucketed line chart</td></tr>
+            <tr><td>/api/v1/breakdown</td><td>IT_AUTH_MINUTE_METRICS</td><td>Top-N dimension drill-down with deltas</td></tr>
+            <tr><td>/api/v1/events</td><td>IT_AUTH_EVENT_SEARCH</td><td>Recent transactions (filterable)</td></tr>
+            <tr><td>/api/v1/filters</td><td>IT_AUTH_MINUTE_METRICS</td><td>Distinct values for dropdowns</td></tr>
+            <tr><td>/api/v1/latency</td><td>Both tables</td><td>Histogram + p50 / p95 / p99</td></tr>
+          </table>
+
+          <h4 style="font-size:.9rem;margin:1.5rem 0 .75rem;color:var(--text)">Authentication Priority</h4>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+            <span class="tag tag-green">1. SPCS Token (production)</span>
+            <span class="tag tag-amber">2. Key-Pair (local dev)</span>
+            <span class="tag tag-purple">3. Password (fallback)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- HOP 5 -->
+      <div class="hop" id="hop5">
+        <div class="hop-meta">
+          <div>
+            <div class="hop-num c5">05</div>
+            <div class="hop-label">FastAPI &rarr; Dashboard</div>
+            <span class="hop-latency-badge fast">&lt; 50ms</span>
+          </div>
+        </div>
+        <div class="hop-content">
+          <h3>React Dashboard Components</h3>
+          <p>Static React build served from the same FastAPI container. 8 components share a centralized filter state that propagates to all API calls simultaneously.</p>
+
+          <div class="comp-grid" style="margin-top:1.25rem">
+            <div class="comp-card">
+              <div class="comp-icon">&#128203;</div>
+              <div>
+                <h4>FilterBar</h4>
+                <div class="comp-endpoint">/api/v1/filters</div>
+                <p>Env, merchant, region, card brand dropdowns</p>
+              </div>
+            </div>
+            <div class="comp-card">
+              <div class="comp-icon">&#128200;</div>
+              <div>
+                <h4>KPIStrip</h4>
+                <div class="comp-endpoint">/api/v1/summary</div>
+                <p>Approval rate, decline rate, latency, volume</p>
+              </div>
+            </div>
+            <div class="comp-card">
+              <div class="comp-icon">&#128208;</div>
+              <div>
+                <h4>TimeSeriesChart</h4>
+                <div class="comp-endpoint">/api/v1/timeseries</div>
+                <p>Event count, decline rate, latency over time</p>
+              </div>
+            </div>
+            <div class="comp-card">
+              <div class="comp-icon">&#128202;</div>
+              <div>
+                <h4>BreakdownTable</h4>
+                <div class="comp-endpoint">/api/v1/breakdown</div>
+                <p>Dimension drill-down with period deltas</p>
+              </div>
+            </div>
+            <div class="comp-card">
+              <div class="comp-icon">&#128680;</div>
+              <div>
+                <h4>RecentFailures</h4>
+                <div class="comp-endpoint">/api/v1/events</div>
+                <p>Declined/errored transactions table</p>
+              </div>
+            </div>
+            <div class="comp-card">
+              <div class="comp-icon">&#9201;</div>
+              <div>
+                <h4>LatencyPanel</h4>
+                <div class="comp-endpoint">/api/v1/latency</div>
+                <p>6-bucket histogram + p50/p95/p99</p>
+              </div>
+            </div>
+            <div class="comp-card">
+              <div class="comp-icon">&#128260;</div>
+              <div>
+                <h4>CompareMode</h4>
+                <div class="comp-endpoint">/api/v1/summary</div>
+                <p>Side-by-side period comparison</p>
+              </div>
+            </div>
+            <div class="comp-card">
+              <div class="comp-icon">&#128994;</div>
+              <div>
+                <h4>FreshnessWidget</h4>
+                <div class="comp-endpoint">/api/v1/summary</div>
+                <p>Raw ingest lag vs serve refresh lag</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══════════════ LATENCY BUDGET ═══════════════ -->
+<section id="latency">
+  <div class="container">
+    <span class="section-num">03 &mdash; Latency Budget</span>
+    <h2 class="section-title">Time in Transit</h2>
+    <p class="section-sub">End-to-end latency breakdown. The 60-second interactive table refresh dominates the budget.</p>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:2rem 2.5rem">
+      <div class="latency-bar">
+        <div class="bar-label">Generator &rarr; Kafka</div>
+        <div class="bar-track"><div class="bar-fill" style="width:1%;background:var(--green)" data-width="1"></div></div>
+        <div class="bar-value" style="color:var(--green)">&lt; 1ms</div>
+      </div>
+      <div class="latency-bar">
+        <div class="bar-label">Kafka &rarr; RAW (HP)</div>
+        <div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--green)" data-width="12"></div></div>
+        <div class="bar-value" style="color:var(--green)">5-10s</div>
+      </div>
+      <div class="latency-bar">
+        <div class="bar-label">RAW &rarr; SERVE</div>
+        <div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--amber)" data-width="80"></div></div>
+        <div class="bar-value" style="color:var(--amber)">60s</div>
+      </div>
+      <div class="latency-bar">
+        <div class="bar-label">SERVE &rarr; FastAPI</div>
+        <div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--green)" data-width="3"></div></div>
+        <div class="bar-value" style="color:var(--green)">~150ms</div>
+      </div>
+      <div class="latency-bar">
+        <div class="bar-label">FastAPI &rarr; Browser</div>
+        <div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--green)" data-width="1"></div></div>
+        <div class="bar-value" style="color:var(--green)">&lt; 50ms</div>
+      </div>
+
+      <div style="margin-top:2rem;padding-top:1.5rem;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem">
+        <div>
+          <div style="font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.1em">Total (HP Path)</div>
+          <div style="font-family:var(--mono);font-size:1.8rem;font-weight:700;color:var(--cyan)">~65-75 seconds</div>
+        </div>
+        <div>
+          <div style="font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.1em">Total (Fallback Path)</div>
+          <div style="font-family:var(--mono);font-size:1.8rem;font-weight:700;color:var(--amber)">~2-4 minutes</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══════════════ ACCESS CONTROL ═══════════════ -->
+<section id="access">
+  <div class="container">
+    <span class="section-num">04 &mdash; Access Control</span>
+    <h2 class="section-title">Roles &amp; Warehouses</h2>
+    <p class="section-sub">Each hop operates under a specific role with least-privilege access to the resources it needs.</p>
+
+    <div class="role-grid">
+      <div class="role-card">
+        <h4>&#128272; Ingest Role</h4>
+        <div class="role-name">PAYMENTS_INGEST_ROLE</div>
+        <p>HP Connector + fallback relay. INSERT on RAW table, OPERATE on pipe. No access to SERVE or CURATED.</p>
+      </div>
+      <div class="role-card">
+        <h4>&#128187; App Role</h4>
+        <div class="role-name">PAYMENTS_APP_ROLE</div>
+        <p>Dashboard backend (SPCS). SELECT on SERVE + RAW. BIND SERVICE ENDPOINT. No write access.</p>
+      </div>
+      <div class="role-card">
+        <h4>&#128065; Ops Role</h4>
+        <div class="role-name">PAYMENTS_OPS_ROLE</div>
+        <p>Dashboard viewers. USAGE on SERVE schema only. Read-only operational access.</p>
+      </div>
+      <div class="role-card">
+        <h4>&#9881; Admin Role</h4>
+        <div class="role-name">PAYMENTS_ADMIN_ROLE</div>
+        <p>Terraform, schemachange, dbt. ALL PRIVILEGES on PAYMENTS_DB. Parent of all other roles.</p>
+      </div>
+    </div>
+
+    <h3 style="font-size:1.1rem;margin:3rem 0 1.5rem;color:var(--text)">Warehouse Assignment</h3>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:1.5rem 2rem">
+      <table class="info-table">
+        <tr><th>Warehouse</th><th>Type</th><th>Size</th><th>Suspend</th><th>Purpose</th></tr>
+        <tr>
+          <td>PAYMENTS_INTERACTIVE_WH</td>
+          <td><span class="tag tag-cyan">Interactive</span></td>
+          <td>XSMALL</td>
+          <td>24h</td>
+          <td>Dashboard queries on interactive tables</td>
+        </tr>
+        <tr>
+          <td>PAYMENTS_REFRESH_WH</td>
+          <td><span class="tag tag-amber">Standard</span></td>
+          <td>XSMALL</td>
+          <td>120s</td>
+          <td>Interactive table + dynamic table refresh</td>
+        </tr>
+        <tr>
+          <td>PAYMENTS_ADMIN_WH</td>
+          <td><span class="tag tag-amber">Standard</span></td>
+          <td>XSMALL</td>
+          <td>60s</td>
+          <td>Admin, RAW freshness, fallback relay</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══════════════ TECH STACK ═══════════════ -->
+<section id="tech">
+  <div class="container">
+    <span class="section-num">05 &mdash; Technology Stack</span>
+    <h2 class="section-title">Technologies &amp; Their Purpose</h2>
+    <p class="section-sub">Every tool in the pipeline and why it was chosen.</p>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1.5rem">
+      <div class="role-card">
+        <h4 style="color:var(--cyan)">Apache Kafka (KRaft)</h4>
+        <div class="role-name">Event Streaming</div>
+        <p>Decouples generator from Snowflake. 72h retention provides replay window for recovery. KRaft mode eliminates Zookeeper dependency. zstd compression minimizes network cost.</p>
+      </div>
+      <div class="role-card">
+        <h4 style="color:var(--green)">Snowpipe Streaming (HP Connector)</h4>
+        <div class="role-name">Real-Time Ingest</div>
+        <p>5-10 second latency from Kafka to queryable rows. User-defined pipe mode enables typed column mapping and RECORD_METADATA extraction for lineage.</p>
+      </div>
+      <div class="role-card">
+        <h4 style="color:var(--amber)">Snowflake Interactive Tables</h4>
+        <div class="role-name">Sub-Minute Serving</div>
+        <p>Pre-aggregated metrics with 60-second refresh. Interactive warehouse type optimized for selective queries. Avoids dynamic table stacking latency.</p>
+      </div>
+      <div class="role-card">
+        <h4 style="color:var(--purple)">dbt + Dynamic Tables</h4>
+        <div class="role-name">Analytical Layer</div>
+        <p>Parallel curated path for BI/ML. Enrichment, hourly/daily aggregations. NOT in the hot serving path &mdash; decoupled from dashboard latency.</p>
+      </div>
+      <div class="role-card">
+        <h4 style="color:var(--cyan)">FastAPI + Dual Pools</h4>
+        <div class="role-name">API Backend</div>
+        <p>Dual warehouse routing: interactive WH for SERVE queries, standard WH for RAW freshness. SPCS token auth in production, key-pair for local dev.</p>
+      </div>
+      <div class="role-card">
+        <h4 style="color:var(--green)">React + SPCS</h4>
+        <div class="role-name">Dashboard UI</div>
+        <p>Single container serves both static React assets and Python API. Deployed to Snowpark Container Services with OAuth authentication.</p>
+      </div>
+      <div class="role-card">
+        <h4 style="color:var(--amber)">Terraform</h4>
+        <div class="role-name">Infrastructure as Code</div>
+        <p>Manages stable infrastructure: roles, warehouses, compute pools, pipes, stages. Import blocks for idempotent apply on existing state.</p>
+      </div>
+      <div class="role-card">
+        <h4 style="color:var(--purple)">schemachange</h4>
+        <div class="role-name">Schema Migrations</div>
+        <p>Versioned DDL for tables, interactive tables, and grants. 8 migrations from raw landing table through privilege configuration.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ FOOTER ═══════════════ -->
+<footer>
+  <p>Payment Authorization Command Center &mdash; Data Flow Reference</p>
+  <p style="margin-top:.25rem;color:var(--text3)">All data is synthetic. No real cardholder data is used in this pipeline.</p>
+</footer>
+
+<script>
+// ─── Intersection Observer for hop reveal ───
+const hops = document.querySelectorAll('.hop');
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) e.target.classList.add('visible');
+  });
+}, { threshold: 0.15 });
+hops.forEach(h => observer.observe(h));
+
+// ─── Latency bar animation ───
+const bars = document.querySelectorAll('.bar-fill');
+const barObserver = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.style.width = e.target.dataset.width + '%';
+    }
+  });
+}, { threshold: 0.3 });
+bars.forEach(b => barObserver.observe(b));
+
+// ─── TOC nav dots ───
+const sections = ['top','pipeline','hops','latency','access','tech'];
+const toc = document.getElementById('toc');
+sections.forEach(id => {
+  const a = document.createElement('a');
+  a.href = '#' + id;
+  a.title = id;
+  toc.appendChild(a);
+});
+const tocLinks = toc.querySelectorAll('a');
+const tocObserver = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      tocLinks.forEach(l => l.classList.remove('active'));
+      const link = toc.querySelector(`a[href="#${e.target.id}"]`);
+      if (link) link.classList.add('active');
+    }
+  });
+}, { threshold: 0.3 });
+sections.forEach(id => {
+  const el = document.getElementById(id);
+  if (el) tocObserver.observe(el);
+});
+</script>
+</body>
+</html>

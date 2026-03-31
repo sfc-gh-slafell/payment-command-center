@@ -155,6 +155,43 @@ from snowflake_client import SnowflakeClient
 
 Blank line between each group. No mixing.
 
+### FastAPI Static Files Path Resolution
+
+When mounting static files in Docker containers, `Path(__file__).parent` resolution must account for the Docker WORKDIR:
+
+```python
+# WRONG — extra .parent goes to filesystem root
+from pathlib import Path
+static_dir = Path(__file__).parent.parent / "frontend" / "dist"
+# If main.py is at /app/main.py, this resolves to /frontend/dist (does not exist)
+
+# CORRECT — single .parent from __file__
+static_dir = Path(__file__).parent / "frontend" / "dist"
+# Resolves to /app/frontend/dist (correct)
+```
+
+**Docker context:**
+```dockerfile
+WORKDIR /app
+COPY backend/ ./                        # main.py → /app/main.py
+COPY --from=frontend-builder /frontend/dist ./frontend/dist  # → /app/frontend/dist
+```
+
+- `Path(__file__)` = `/app/main.py`
+- `Path(__file__).parent` = `/app/`
+- `Path(__file__).parent.parent` = `/` (filesystem root)
+
+**Always verify static paths exist before mounting:**
+```python
+static_dir = Path(__file__).parent / "frontend" / "dist"
+if static_dir.exists():
+    app.mount("/", StaticFiles(directory=static_dir, html=True), name="frontend")
+else:
+    logger.warning(f"Static directory not found: {static_dir}")
+```
+
+**Symptom of wrong path:** FastAPI returns `{"detail":"Not Found"}` for root path `/` while `/health` works correctly.
+
 ## Common Pitfalls
 
 1. **E402 in FastAPI main.py** — Move route imports to top of file. Routes should define `router = APIRouter()` independently, not import `app`.
@@ -162,6 +199,7 @@ Blank line between each group. No mixing.
 3. **Missing ruff config** — Without explicit config, ruff uses defaults which include E402 and F401. Either fix violations or configure ignores.
 4. **CI fails but local passes** — Ensure local ruff version matches CI. Pin version in `requirements-dev.txt` or `pyproject.toml`.
 5. **Redundant nested imports** — Don't `import json` inside a function if it's already imported at module level.
+6. **Off-by-one `.parent` in Docker paths** — `Path(__file__).parent.parent` from `/app/main.py` resolves to `/`, not `/app`. Use single `.parent` for same-level directories.
 
 ## Quick Reference
 

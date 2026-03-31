@@ -18,6 +18,12 @@
 # =============================================================================
 
 resource "snowflake_execute" "payments_interactive_wh" {
+  # Note: The TABLES (...) clause is intentionally omitted here.
+  # Interactive tables (IT_AUTH_MINUTE_METRICS, IT_AUTH_EVENT_SEARCH) are
+  # created by schemachange (V1.2.0), which runs AFTER Terraform. Adding TABLES
+  # here would cause Terraform to fail on a fresh deploy (tables don't exist yet).
+  # The warehouse-table binding is handled in schemachange migration V1.8.0:
+  #   ALTER WAREHOUSE PAYMENTS_INTERACTIVE_WH ADD TABLES (...)
   execute = "CREATE OR REPLACE INTERACTIVE WAREHOUSE PAYMENTS_INTERACTIVE_WH WAREHOUSE_SIZE = 'XSMALL' AUTO_SUSPEND = 86400 AUTO_RESUME = TRUE INITIALLY_SUSPENDED = TRUE COMMENT = 'Interactive warehouse for low-latency payment queries'"
   revert  = "DROP WAREHOUSE IF EXISTS PAYMENTS_INTERACTIVE_WH"
   query   = "SHOW WAREHOUSES LIKE 'PAYMENTS_INTERACTIVE_WH'"

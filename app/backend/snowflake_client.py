@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 # Connection parameters
 SNOWFLAKE_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT", "")
+SNOWFLAKE_HOST = os.getenv("SNOWFLAKE_HOST", "")
 SNOWFLAKE_USER = os.getenv("SNOWFLAKE_USER", "")
 SNOWFLAKE_DATABASE = os.getenv("SNOWFLAKE_DATABASE", "PAYMENTS_DB")
 SNOWFLAKE_ROLE = os.getenv("SNOWFLAKE_ROLE", "PAYMENTS_APP_ROLE")
@@ -71,6 +72,8 @@ def _create_connection(
         "warehouse": warehouse,
         "role": SNOWFLAKE_ROLE,
     }
+    if SNOWFLAKE_HOST:
+        base_params["host"] = SNOWFLAKE_HOST
 
     # Try SPCS token auth first (production)
     token = _get_spcs_token()

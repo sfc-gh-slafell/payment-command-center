@@ -50,5 +50,26 @@ services:
       SNOWFLAKE_URL: "${SNOWFLAKE_URL}"
       SNOWFLAKE_USER: "${SNOWFLAKE_USER}"
       SNOWFLAKE_PRIVATE_KEY: "${SNOWFLAKE_PRIVATE_KEY}"
+      # Enable environment variable substitution in connector configs
+      CONNECT_CONFIG_PROVIDERS: "env"
+      CONNECT_CONFIG_PROVIDERS_ENV_CLASS: "org.apache.kafka.common.config.provider.EnvVarConfigProvider"
     depends_on:
       - kafka
+
+  generator:
+    build:
+      context: generator
+      dockerfile: Dockerfile
+    container_name: payments-generator
+    ports:
+      - "8001:8000"
+    environment:
+      # Kafka connection — use internal listener for container-to-container traffic
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:29092"
+      KAFKA_TOPIC: "payments.auth"
+      # Generator defaults (can be changed via API)
+      GENERATOR_RATE: "500"
+      GENERATOR_ENV: "dev"
+    depends_on:
+      - kafka
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
