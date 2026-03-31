@@ -18,7 +18,7 @@
 # =============================================================================
 
 resource "snowflake_execute" "payments_interactive_wh" {
-  execute = "CREATE INTERACTIVE WAREHOUSE IF NOT EXISTS PAYMENTS_INTERACTIVE_WH WAREHOUSE_SIZE = 'XSMALL' AUTO_SUSPEND = 86400 AUTO_RESUME = TRUE INITIALLY_SUSPENDED = TRUE COMMENT = 'Interactive warehouse for low-latency payment queries'"
+  execute = "CREATE OR REPLACE INTERACTIVE WAREHOUSE PAYMENTS_INTERACTIVE_WH WAREHOUSE_SIZE = 'XSMALL' AUTO_SUSPEND = 86400 AUTO_RESUME = TRUE INITIALLY_SUSPENDED = TRUE COMMENT = 'Interactive warehouse for low-latency payment queries'"
   revert  = "DROP WAREHOUSE IF EXISTS PAYMENTS_INTERACTIVE_WH"
   query   = "SHOW WAREHOUSES LIKE 'PAYMENTS_INTERACTIVE_WH'"
 }

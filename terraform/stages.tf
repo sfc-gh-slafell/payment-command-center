@@ -16,7 +16,7 @@
 # =============================================================================
 
 resource "snowflake_execute" "dashboard_repo" {
-  execute = "CREATE IMAGE REPOSITORY IF NOT EXISTS \"${snowflake_database.payments_db.name}\".\"${snowflake_schema.app.name}\".\"DASHBOARD_REPO\" COMMENT = 'Container image repository for Streamlit dashboard'"
+  execute = "CREATE OR REPLACE IMAGE REPOSITORY \"${snowflake_database.payments_db.name}\".\"${snowflake_schema.app.name}\".\"DASHBOARD_REPO\" COMMENT = 'Container image repository for Streamlit dashboard'"
   revert  = "DROP IMAGE REPOSITORY IF EXISTS \"${snowflake_database.payments_db.name}\".\"${snowflake_schema.app.name}\".\"DASHBOARD_REPO\""
   query   = "SHOW IMAGE REPOSITORIES LIKE 'DASHBOARD_REPO' IN SCHEMA \"${snowflake_database.payments_db.name}\".\"${snowflake_schema.app.name}\""
 }
