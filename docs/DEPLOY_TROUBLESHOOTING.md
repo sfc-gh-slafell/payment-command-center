@@ -860,3 +860,169 @@ This command is idempotent — if the table is already associated, the command s
 5. Queries from `PAYMENTS_APP_ROLE` via `PAYMENTS_INTERACTIVE_WH` now succeed
 
 **Key lesson:** Interactive Tables are NOT automatically bound to an Interactive Warehouse. The `ALTER WAREHOUSE ... ADD TABLES (...)` step is mandatory and must come after both the warehouse and the tables exist. The limit is 10 tables per interactive warehouse.
+
+---
+
+## Issue 28 — TypeScript test file imported unavailable modules + wrong prop interface (CI failure)
+
+**Symptom:** PR CI failed on both `TypeScript Lint (eslint + tsc)` and `Docker Build` jobs:
+```
+src/__tests__/ScenarioBadge.test.tsx(10,38): error TS2307: Cannot find module 'vitest'
+src/__tests__/ScenarioBadge.test.tsx(11,32): error TS2307: Cannot find module '@testing-library/react'
+src/__tests__/ScenarioBadge.test.tsx(18,9): error TS2322: Property 'profile' does not exist on type
+  'IntrinsicAttributes & ScenarioBadgeProps'.
+```
+
+**Root cause:** The test file was written as forward-looking "spec documentation" before the component was implemented. It:
+1. Imported `vitest` and `@testing-library/react` — neither installed in `package.json`
+2. Used flat props (`profile`, `timeRemainingSeconds`, `eventsPerSecond`) — the actual component takes `scenario: ScenarioInfo` (a single object)
+
+Both failures share the same root: the test file included `import` statements and JSX with props that don't compile. The Docker build runs `npm run build` → `tsc -b && vite build`, so the same TypeScript errors killed the Docker build too.
+
+**Fix:** Rewrote `src/__tests__/ScenarioBadge.test.tsx` as type-only JSX compilation tests:
+- Removed `vitest` and `@testing-library/react` imports
+- Replaced `render(<ScenarioBadge profile="..." />)` calls with typed JSX expressions assigned to `const _x = (...)` (never rendered)
+- Used `scenario={{ profile, time_remaining_sec, events_per_sec }}` matching actual `ScenarioInfo` interface
+- Added `void _x` lines to suppress unused-variable warnings
+
+**Pattern for test files without a test runner:**
+```tsx
+import ScenarioBadge from '../components/ScenarioBadge';
+import type { ScenarioInfo } from '../types/api';
+
+// Compile-time type checks — never rendered
+const _baseline = (
+  <ScenarioBadge scenario={{ profile: 'baseline', time_remaining_sec: null, events_per_sec: 500 }} />
+);
+void _baseline;
+```
+
+**Key lesson:** When a testing library is not yet installed, test files must not `import` from it — even with a `// Will be added later` comment. The file still compiles and the import still fails. Either exclude test files from `tsconfig.json` or write type-only tests using only installed packages.
+
+---
+
+## Issue 29 — `make app-deploy` used wrong CLI command (`snow streamlit deploy` for SPCS service)
+
+**Symptom:** `make app-deploy` → `snow streamlit deploy --project spcs/` failed:
+```
+Your project definition is missing the following field:
+  'entities.payment_command_center.service.artifacts'
+Extra inputs are not permitted. You provided field
+  'entities.payment_command_center.service.spec' with value './service_spec.yaml'
+```
+
+**Root cause (two combined):**
+1. The `Makefile` `app-deploy` target called `snow streamlit deploy` but `spcs/snowflake.yml` defines a `type: service` entity — the wrong subcommand was used
+2. The `snowflake.yml` used the deprecated `spec` field (see Issue 30)
+
+**Fix:** The correct command for SPCS service entities is `snow spcs service deploy`:
+```bash
+snow spcs service deploy payment_command_center --project spcs/ -c business_critical
+```
+
+**Updated Makefile target (if updating it):**
+```makefile
+app-deploy: ## Deploy the application to SPCS
+	snow spcs service deploy payment_command_center --project spcs/ -c business_critical \
+	  || snow spcs service deploy payment_command_center --project spcs/ --upgrade -c business_critical
+```
+
+**Command mapping by entity type:**
+| `snowflake.yml` entity type | Correct deploy command |
+|---|---|
+| `type: streamlit` | `snow streamlit deploy` |
+| `type: service` | `snow spcs service deploy` |
+| `type: function` | `snow snowpark function deploy` |
+
+---
+
+## Issue 30 — `snowflake.yml` `spec` field removed in Snow CLI 3.x DefinitionV20
+
+**Symptom:** Same error as Issue 29:
+```
+Your project definition is missing the following field:
+  'entities.payment_command_center.service.artifacts'
+Extra inputs are not permitted. You provided field
+  'entities.payment_command_center.service.spec'
+```
+
+**Root cause:** Snow CLI 3.16.0 `DefinitionV20` schema for `ServiceEntityModel` no longer has a `spec` field. The new schema requires:
+- `artifacts` — list of local files to upload to the stage
+- `spec_file` — filename on the stage used as `SPECIFICATION_FILE` in the generated SQL
+
+**Fix:** Updated `spcs/snowflake.yml`:
+```yaml
+# Before (invalid in Snow CLI 3.x):
+spec: ./service_spec.yaml
+
+# After:
+artifacts:
+  - ./service_spec.yaml
+spec_file: service_spec.yaml
+```
+
+**How deploy uses these fields:**
+1. `artifacts` → files are uploaded to `stage` via `StageManager.put()`
+2. `spec_file` → passed as `SPECIFICATION_FILE = 'service_spec.yaml'` in the `CREATE/ALTER SERVICE` SQL
+
+**Full valid `snowflake.yml` for Snow CLI 3.x:**
+```yaml
+definition_version: "2"
+
+entities:
+  payment_command_center:
+    type: service
+    identifier:
+      database: PAYMENTS_DB
+      schema: APP
+      name: PAYMENT_COMMAND_CENTER
+    compute_pool: PAYMENTS_DASHBOARD_POOL
+    artifacts:
+      - ./service_spec.yaml
+    spec_file: service_spec.yaml
+    stage: PAYMENTS_DB.APP.SPECS
+    comment: "Payment Command Center dashboard service"
+```
+
+**Other valid `ServiceEntityModel` fields:** `min_instances`, `max_instances`, `auto_resume`, `auto_suspend_secs`, `query_warehouse`, `tags`, `comment`.
+
+---
+
+## Issue 31 — Expired Cortex Code session tokens block private-key auth for `snow` CLI
+
+**Symptom:** All `snow` CLI commands fail immediately with:
+```
+Invalid connection configuration. 251007: 251007: Session and master tokens invalid
+```
+
+This happens even for connections configured with `authenticator = "SNOWFLAKE_JWT"` and a valid private key file. `snow connection test -c business_critical` also fails.
+
+**Root cause:** Cortex Code injects session tokens for each active connection as environment variables at startup:
+```
+SNOWFLAKE_CONNECTIONS_BUSINESS_CRITICAL_SESSION_TOKEN=ver:3-hint:...
+SNOWFLAKE_CONNECTIONS_BUSINESS_CRITICAL_MASTER_TOKEN=ver:3-hint:...
+```
+
+The Snow CLI reads these env vars and uses them to authenticate — bypassing the `connections.toml` private key configuration entirely. After the session expires (typically a few hours), the tokens are invalid but still present in the environment. The CLI tries to use them, fails with 251007, and never falls back to key-pair auth.
+
+**Fix:** Unset the expired token env vars when running `snow` CLI commands:
+```bash
+env -u SNOWFLAKE_CONNECTIONS_BUSINESS_CRITICAL_SESSION_TOKEN \
+    -u SNOWFLAKE_CONNECTIONS_BUSINESS_CRITICAL_MASTER_TOKEN \
+    snow spcs service deploy ...
+```
+
+**General pattern:**
+```bash
+env -u SNOWFLAKE_CONNECTIONS_${CONN^^}_SESSION_TOKEN \
+    -u SNOWFLAKE_CONNECTIONS_${CONN^^}_MASTER_TOKEN \
+    snow <command> -c <conn>
+```
+where `${CONN^^}` is the connection name uppercased with hyphens replaced by underscores.
+
+**Detection:** If `snow connection test` fails with 251007 but the private key file exists and is valid, expired injected tokens are the cause. Confirm with:
+```bash
+env | grep SNOWFLAKE_CONNECTIONS_BUSINESS_CRITICAL
+```
+
+**Key lesson:** Cortex Code session tokens supersede `connections.toml` key-pair config. When tokens expire mid-session, always unset them before invoking `snow` CLI commands.
