@@ -18,3 +18,11 @@ resource "snowflake_execute" "payments_dashboard_pool" {
   revert  = "DROP COMPUTE POOL IF EXISTS PAYMENTS_DASHBOARD_POOL"
   query   = "SHOW COMPUTE POOLS LIKE 'PAYMENTS_DASHBOARD_POOL'"
 }
+
+resource "snowflake_execute" "grant_pool_to_app_role" {
+  execute = "GRANT USAGE ON COMPUTE POOL PAYMENTS_DASHBOARD_POOL TO ROLE PAYMENTS_APP_ROLE"
+  revert  = "REVOKE USAGE ON COMPUTE POOL PAYMENTS_DASHBOARD_POOL FROM ROLE PAYMENTS_APP_ROLE"
+  query   = "SHOW GRANTS ON COMPUTE POOL PAYMENTS_DASHBOARD_POOL"
+
+  depends_on = [snowflake_execute.payments_dashboard_pool]
+}

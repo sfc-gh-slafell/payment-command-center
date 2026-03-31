@@ -99,7 +99,7 @@ resource "snowflake_grant_privileges_to_account_role" "admin_schema_app" {
 
 resource "snowflake_grant_privileges_to_account_role" "app_schema_app" {
   account_role_name = snowflake_account_role.payments_app.name
-  privileges        = ["USAGE"]
+  privileges        = ["USAGE", "CREATE SERVICE"]
 
   on_schema {
     schema_name = snowflake_schema.app.fully_qualified_name
