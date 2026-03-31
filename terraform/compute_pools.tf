@@ -8,7 +8,7 @@
 
 resource "snowflake_execute" "payments_dashboard_pool" {
   execute = <<-EOT
-    CREATE OR ALTER COMPUTE POOL PAYMENTS_DASHBOARD_POOL
+    CREATE COMPUTE POOL IF NOT EXISTS PAYMENTS_DASHBOARD_POOL
       MIN_NODES        = 1
       MAX_NODES        = 2
       INSTANCE_FAMILY  = CPU_X64_S
