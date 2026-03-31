@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import type { DashboardFilters } from './types/api';
+import type { DashboardFilters, SummaryResponse } from './types/api';
+import { useApiQuery } from './hooks/useApiQuery';
+import ScenarioBadge from './components/ScenarioBadge';
 import FilterBar from './components/FilterBar';
 import KPIStrip from './components/KPIStrip';
 import TimeSeriesChart from './components/TimeSeriesChart';
@@ -23,6 +25,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-dashboard-bg text-dashboard-text">
+      {/* Scenario badge — shows active demo scenario */}
+      <ScenarioBadgeWrapper filters={filters} />
+
       {/* Filter bar — persistent top */}
       <FilterBar filters={filters} onChange={setFilters} />
 
@@ -59,4 +64,13 @@ export default function App() {
       </div>
     </div>
   );
+}
+
+// Wrapper to fetch and display scenario badge
+function ScenarioBadgeWrapper({ filters }: { filters: DashboardFilters }) {
+  const { data } = useApiQuery<SummaryResponse>('summary', '/api/v1/summary', filters);
+
+  if (!data?.scenario) return null;
+
+  return <ScenarioBadge scenario={data.scenario} />;
 }

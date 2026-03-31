@@ -11,6 +11,12 @@ class FreshnessInfo(BaseModel):
     last_serve_ts: str | None = None
 
 
+class ScenarioInfo(BaseModel):
+    profile: str = "unknown"
+    time_remaining_sec: int | None = None
+    events_per_sec: int = 0
+
+
 class SummaryResponse(BaseModel):
     current_events: int | None = None
     current_approval_rate: float | None = None
@@ -21,6 +27,7 @@ class SummaryResponse(BaseModel):
     prev_decline_rate: float | None = None
     prev_avg_latency_ms: float | None = None
     freshness: FreshnessInfo = FreshnessInfo()
+    scenario: ScenarioInfo = ScenarioInfo()
 
 
 @router.get("/api/v1/summary", response_model=SummaryResponse)
@@ -33,8 +40,17 @@ async def get_summary(
 ):
     from main import get_client
     from pathlib import Path
+    from generator_client import get_generator_status
 
     client = get_client()
+
+    # Fetch generator scenario status
+    generator_status = get_generator_status()
+    scenario = ScenarioInfo(
+        profile=generator_status.get("profile", "unknown"),
+        time_remaining_sec=generator_status.get("time_remaining_sec"),
+        events_per_sec=generator_status.get("events_per_sec", 0)
+    )
 
     sql = Path(__file__).parent.parent.joinpath("queries", "summary.sql").read_text()
     params = {
@@ -71,5 +87,6 @@ async def get_summary(
             prev_decline_rate=row.get("PREV_DECLINE_RATE"),
             prev_avg_latency_ms=row.get("PREV_AVG_LATENCY_MS"),
             freshness=freshness,
+            scenario=scenario,
         )
-    return SummaryResponse(freshness=freshness)
+    return SummaryResponse(freshness=freshness, scenario=scenario)
