@@ -114,18 +114,20 @@ jobs:
         run: snow spcs image-registry login --connection default
       - name: Build and push app image
         run: |
+          REGISTRY="${REGISTRY_HOST,,}"
           docker build -f app/Dockerfile app/ \
-            -t "${REGISTRY_HOST}/payments_db/app/dashboard_repo/payment-command-center:${IMAGE_TAG}" \
-            -t "${REGISTRY_HOST}/payments_db/app/dashboard_repo/payment-command-center:latest"
-          docker push "${REGISTRY_HOST}/payments_db/app/dashboard_repo/payment-command-center:${IMAGE_TAG}"
-          docker push "${REGISTRY_HOST}/payments_db/app/dashboard_repo/payment-command-center:latest"
+            -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-command-center:${IMAGE_TAG}" \
+            -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-command-center:latest"
+          docker push "${REGISTRY}/payments_db/app/dashboard_repo/payment-command-center:${IMAGE_TAG}"
+          docker push "${REGISTRY}/payments_db/app/dashboard_repo/payment-command-center:latest"
       - name: Build and push generator image
         run: |
+          REGISTRY="${REGISTRY_HOST,,}"
           docker build -f generator/Dockerfile generator/ \
-            -t "${REGISTRY_HOST}/payments_db/app/dashboard_repo/payment-generator:${IMAGE_TAG}" \
-            -t "${REGISTRY_HOST}/payments_db/app/dashboard_repo/payment-generator:latest"
-          docker push "${REGISTRY_HOST}/payments_db/app/dashboard_repo/payment-generator:${IMAGE_TAG}"
-          docker push "${REGISTRY_HOST}/payments_db/app/dashboard_repo/payment-generator:latest"
+            -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-generator:${IMAGE_TAG}" \
+            -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-generator:latest"
+          docker push "${REGISTRY}/payments_db/app/dashboard_repo/payment-generator:${IMAGE_TAG}"
+          docker push "${REGISTRY}/payments_db/app/dashboard_repo/payment-generator:latest"
 
   spcs-deploy:
     name: 5. SPCS Service Deploy

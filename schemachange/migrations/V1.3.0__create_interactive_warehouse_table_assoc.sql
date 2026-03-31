@@ -7,11 +7,11 @@
 -- =============================================================================
 
 -- Associate interactive tables with the interactive warehouse
-ALTER WAREHOUSE PAYMENTS_INTERACTIVE_WH SET
+ALTER INTERACTIVE WAREHOUSE PAYMENTS_INTERACTIVE_WH SET
     TABLES = (
         PAYMENTS_DB.SERVE.IT_AUTH_MINUTE_METRICS,
         PAYMENTS_DB.SERVE.IT_AUTH_EVENT_SEARCH
     );
 
 -- Resume the interactive warehouse (created suspended by Terraform)
-ALTER WAREHOUSE PAYMENTS_INTERACTIVE_WH RESUME;
+ALTER INTERACTIVE WAREHOUSE PAYMENTS_INTERACTIVE_WH RESUME IF SUSPENDED;
