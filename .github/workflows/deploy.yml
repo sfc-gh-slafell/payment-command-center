@@ -112,22 +112,22 @@ jobs:
           chmod 0600 ~/.snowflake/connections.toml
       - name: Docker login to Snowflake registry
         run: snow spcs image-registry login --connection default
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       - name: Build and push app image
         run: |
           REGISTRY="${REGISTRY_HOST,,}"
-          docker build -f app/Dockerfile app/ \
+          docker buildx build -f app/Dockerfile app/ \
+            --push \
             -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-command-center:${IMAGE_TAG}" \
             -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-command-center:latest"
-          docker push "${REGISTRY}/payments_db/app/dashboard_repo/payment-command-center:${IMAGE_TAG}"
-          docker push "${REGISTRY}/payments_db/app/dashboard_repo/payment-command-center:latest"
       - name: Build and push generator image
         run: |
           REGISTRY="${REGISTRY_HOST,,}"
-          docker build -f generator/Dockerfile generator/ \
+          docker buildx build -f generator/Dockerfile generator/ \
+            --push \
             -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-generator:${IMAGE_TAG}" \
             -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-generator:latest"
-          docker push "${REGISTRY}/payments_db/app/dashboard_repo/payment-generator:${IMAGE_TAG}"
-          docker push "${REGISTRY}/payments_db/app/dashboard_repo/payment-generator:latest"
 
   spcs-deploy:
     name: 5. SPCS Service Deploy
