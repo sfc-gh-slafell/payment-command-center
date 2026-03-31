@@ -23,8 +23,3 @@ spec:
     - name: dashboard
       port: 8080
       public: true
-
-  serviceRoles:
-    - name: dashboard_viewer
-      endpoints:
-        - dashboard
