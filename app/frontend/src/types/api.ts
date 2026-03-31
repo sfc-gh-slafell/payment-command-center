@@ -5,6 +5,12 @@ export interface FreshnessInfo {
   last_serve_ts: string | null;
 }
 
+export interface ScenarioInfo {
+  profile: 'baseline' | 'issuer_outage' | 'merchant_decline_spike' | 'latency_spike' | 'unknown';
+  time_remaining_sec: number | null;
+  events_per_sec: number;
+}
+
 export interface SummaryResponse {
   current_events: number | null;
   current_approval_rate: number | null;
@@ -15,6 +21,7 @@ export interface SummaryResponse {
   prev_decline_rate: number | null;
   prev_avg_latency_ms: number | null;
   freshness: FreshnessInfo;
+  scenario: ScenarioInfo;
 }
 
 export interface TimeseriesBucket {
