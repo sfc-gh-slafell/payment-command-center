@@ -14,9 +14,9 @@ variable "snowflake_user" {
 }
 
 variable "snowflake_role" {
-  description = "Snowflake role for Terraform operations"
+  description = "Snowflake role for Terraform operations (ACCOUNTADMIN required for resource monitors and compute pools)"
   type        = string
-  default     = "SYSADMIN"
+  default     = "ACCOUNTADMIN"
 }
 
 variable "snowflake_private_key" {
