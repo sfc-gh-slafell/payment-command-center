@@ -8,6 +8,8 @@ entities:
       schema: APP
       name: PAYMENT_COMMAND_CENTER
     compute_pool: PAYMENTS_DASHBOARD_POOL
-    spec: ./service_spec.yaml
+    artifacts:
+      - ./service_spec.yaml
+    spec_file: service_spec.yaml
     stage: PAYMENTS_DB.APP.SPECS
     comment: "Payment Command Center dashboard service"
