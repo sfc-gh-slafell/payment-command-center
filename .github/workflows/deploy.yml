@@ -90,21 +90,12 @@ jobs:
     needs: terraform-apply
     env:
       IMAGE_TAG: ${{ github.sha }}
-      REGISTRY_HOST: ${{ format('{0}-{1}.registry.snowflakecomputing.com', secrets.SNOWFLAKE_ORGANIZATION_NAME, secrets.SNOWFLAKE_ACCOUNT_NAME) }}
       SNOWFLAKE_ACCOUNT: ${{ format('{0}-{1}', secrets.SNOWFLAKE_ORGANIZATION_NAME, secrets.SNOWFLAKE_ACCOUNT_NAME) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Enable Docker containerd image store
-        run: |
-          echo '{"features":{"containerd-snapshotter":true}}' | sudo tee /etc/docker/daemon.json
-          sudo systemctl restart docker
-          # Remove any credential store helper so docker login writes directly
-          # to ~/.docker/config.json auths section (containerd reads from there)
-          mkdir -p ~/.docker
-          echo '{}' > ~/.docker/config.json
       - run: pip install snowflake-cli
       - run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > /tmp/snowflake_key.p8
       - name: Configure snow CLI connection
@@ -120,52 +111,25 @@ jobs:
           warehouse = "PAYMENTS_ADMIN_WH"
           EOF
           chmod 0600 ~/.snowflake/connections.toml
+      - name: Compute RFC-compliant registry hostname
+        run: |
+          # snow spcs image-registry login normalises the account identifier:
+          # lowercase + replace underscores with hyphens. We must use the same
+          # hostname so credentials stored by docker login are found at push time.
+          REGISTRY=$(echo "${{ secrets.SNOWFLAKE_ORGANIZATION_NAME }}-${{ secrets.SNOWFLAKE_ACCOUNT_NAME }}" \
+            | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+          echo "REGISTRY=${REGISTRY}.registry.snowflakecomputing.com" >> "$GITHUB_ENV"
       - name: Docker login to Snowflake registry
-        run: |
-          snow spcs image-registry login --connection default
-          python3 -c "import json,sys; cfg=json.load(open('/home/runner/.docker/config.json')); print('credsStore:',cfg.get('credsStore','NONE')); print('credHelpers:',cfg.get('credHelpers',{})); print('Auth keys:',[k for k in cfg.get('auths',{})])"
-      - name: Extract credentials into explicit Docker config
-        run: |
-          mkdir -p /tmp/docker-explicit
-          cat > /tmp/extract_creds.py << 'PYEOF'
-          import json, subprocess, base64, os, sys
-          registry = os.environ['REGISTRY_HOST'].lower()
-          with open('/home/runner/.docker/config.json') as f:
-              cfg = json.load(f)
-          auth_b64 = cfg.get('auths', {}).get(registry, {}).get('auth')
-          if not auth_b64:
-              creds_store = cfg.get('credsStore') or cfg.get('credHelpers', {}).get(registry)
-              if creds_store:
-                  r = subprocess.run([f'docker-credential-{creds_store}', 'get'],
-                                     input=registry.encode(), capture_output=True)
-                  if r.returncode == 0:
-                      c = json.loads(r.stdout)
-                      auth_b64 = base64.b64encode(f"{c['Username']}:{c['Secret']}".encode()).decode()
-                  else:
-                      print('credential helper error:', r.stderr.decode(), file=sys.stderr)
-          if not auth_b64:
-              print('ERROR: no credentials found for', registry, file=sys.stderr); sys.exit(1)
-          explicit = {'auths': {registry: {'auth': auth_b64}}}
-          with open('/tmp/docker-explicit/config.json', 'w') as f:
-              json.dump(explicit, f)
-          print(f'Credentials written for {registry}')
-          PYEOF
-          python3 /tmp/extract_creds.py
+        run: snow spcs image-registry login --connection default
       - name: Build and push app image
-        env:
-          DOCKER_CONFIG: /tmp/docker-explicit
         run: |
-          REGISTRY="${REGISTRY_HOST,,}"
           docker build -f app/Dockerfile app/ \
             -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-command-center:${IMAGE_TAG}" \
             -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-command-center:latest"
           docker push "${REGISTRY}/payments_db/app/dashboard_repo/payment-command-center:${IMAGE_TAG}"
           docker push "${REGISTRY}/payments_db/app/dashboard_repo/payment-command-center:latest"
       - name: Build and push generator image
-        env:
-          DOCKER_CONFIG: /tmp/docker-explicit
         run: |
-          REGISTRY="${REGISTRY_HOST,,}"
           docker build -f generator/Dockerfile generator/ \
             -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-generator:${IMAGE_TAG}" \
             -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-generator:latest"
