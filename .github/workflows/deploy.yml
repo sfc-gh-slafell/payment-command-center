@@ -97,6 +97,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Enable Docker containerd image store
+        run: |
+          echo '{"features":{"containerd-snapshotter":true}}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+          docker info | grep -i "storage driver"
       - run: pip install snowflake-cli
       - run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > /tmp/snowflake_key.p8
       - name: Configure snow CLI connection
@@ -117,17 +122,19 @@ jobs:
       - name: Build and push app image
         run: |
           REGISTRY="${REGISTRY_HOST,,}"
-          docker buildx build -f app/Dockerfile app/ \
-            --push \
+          docker build -f app/Dockerfile app/ \
             -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-command-center:${IMAGE_TAG}" \
             -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-command-center:latest"
+          docker push "${REGISTRY}/payments_db/app/dashboard_repo/payment-command-center:${IMAGE_TAG}"
+          docker push "${REGISTRY}/payments_db/app/dashboard_repo/payment-command-center:latest"
       - name: Build and push generator image
         run: |
           REGISTRY="${REGISTRY_HOST,,}"
-          docker buildx build -f generator/Dockerfile generator/ \
-            --push \
+          docker build -f generator/Dockerfile generator/ \
             -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-generator:${IMAGE_TAG}" \
             -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-generator:latest"
+          docker push "${REGISTRY}/payments_db/app/dashboard_repo/payment-generator:${IMAGE_TAG}"
+          docker push "${REGISTRY}/payments_db/app/dashboard_repo/payment-generator:latest"
 
   spcs-deploy:
     name: 5. SPCS Service Deploy
