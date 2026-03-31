@@ -53,7 +53,8 @@ jobs:
       - run: pip install schemachange
       - run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > /tmp/snowflake_key.p8
       - name: schemachange deploy
-        run: schemachange deploy --config-file-path schemachange/schemachange-config.yml
+        run: schemachange deploy
+        working-directory: schemachange
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ORGANIZATION_NAME }}-${{ secrets.SNOWFLAKE_ACCOUNT_NAME }}
           SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
@@ -108,6 +109,7 @@ jobs:
           role = "PAYMENTS_ADMIN_ROLE"
           warehouse = "PAYMENTS_ADMIN_WH"
           EOF
+          chmod 0600 ~/.snowflake/connections.toml
       - name: Docker login to Snowflake registry
         run: snow spcs image-registry login --connection default
       - name: Build and push app image
@@ -149,6 +151,7 @@ jobs:
           role = "PAYMENTS_APP_ROLE"
           warehouse = "PAYMENTS_ADMIN_WH"
           EOF
+          chmod 0600 ~/.snowflake/connections.toml
       - name: Deploy SPCS service
         run: snow spcs service create PAYMENT_DASHBOARD --spec-path spcs/service_spec.yaml --compute-pool PAYMENTS_DASHBOARD_POOL --database PAYMENTS_DB --schema APP
 
