@@ -55,6 +55,10 @@ sfpscogs-slafell-aws-2.registry.snowflakecomputing.com/payments_db/app/dashboard
 ### CI/CD Docker Push Pattern
 
 ```yaml
+# DO NOT use docker/setup-buildx-action — it creates an isolated builder
+# that can't access host credentials from snow spcs image-registry login
+# - uses: docker/setup-buildx-action@v3  # ❌ WRONG
+
 - name: Docker login to Snowflake registry
   run: snow spcs image-registry login --connection default
 
@@ -73,10 +77,12 @@ sfpscogs-slafell-aws-2.registry.snowflakecomputing.com/payments_db/app/dashboard
 ```
 
 **Key points:**
+- **Never use `docker/setup-buildx-action@v3`** — its isolated builder can't access host `~/.docker/config.json` credentials
+- Use default Docker daemon builder (shares host credential store)
+- Always specify `--platform linux/amd64` — SPCS only supports AMD64, not ARM
 - Use `docker buildx build --push` (more reliable than separate build+push for SPCS)
 - Always tag with both git SHA and `latest`
 - Verify `REGISTRY_HOST` is non-empty before docker operations
-- Platform must be `linux/amd64` for SPCS compute pools
 
 ### Connections Configuration for Snow CLI
 
@@ -94,8 +100,9 @@ private_key_file = "/tmp/snowflake_key.p8"
 1. **401 Unauthorized on push** — Registry hostname uses underscores instead of hyphens. The `snow spcs image-registry login` credential key uses hyphens.
 2. **"Must provide --username"** — Using manual `docker login` with empty vars. Use `snow spcs image-registry login` instead.
 3. **Empty REGISTRY_HOST** — Secret not set or not propagated to job. Always guard: `if: env.REGISTRY_HOST != ''`
-4. **Wrong platform** — SPCS runs on `linux/amd64`. Always specify `--platform linux/amd64` in buildx.
+4. **Wrong platform** — SPCS runs on `linux/amd64`. Always specify `--platform linux/amd64` in buildx. ARM images (from Apple Silicon) cause service to stuck in `PENDING` with "Readiness probe failing".
 5. **Credential not found after login** — Docker config.json may have stale entries. Reset with `echo '{}' > ~/.docker/config.json` before login.
+6. **Isolated buildx builder has no credentials** — `docker/setup-buildx-action@v3` creates a container builder that can't see host `~/.docker/config.json`. Don't use it — rely on default Docker daemon builder.
 
 ## Quick Reference
 

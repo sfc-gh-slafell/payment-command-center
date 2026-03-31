@@ -444,3 +444,43 @@ SELECT CURRENT_ORGANIZATION_NAME();  -- SFPSCOGS
 SELECT CURRENT_ACCOUNT_NAME();       -- SLAFELL_AWS_2
 SELECT CURRENT_USER();               -- SLAFELL
 ```
+
+---
+
+## Issue 16 — Service stuck `PENDING` / `"Readiness probe is failing"` after ARM image push
+
+**Symptom:** `SYSTEM$GET_SERVICE_STATUS` reports `PENDING` with `"Readiness probe is failing at path: /health, port: 8080"` indefinitely. Container logs show `GET /health HTTP/1.1" 200 OK` on every probe. Ingress returns `"no service hosts found"`.
+
+**Root cause:** The `:latest` image tag in the registry was overwritten by a local build on an Apple Silicon (ARM) Mac without `--platform linux/amd64`. SPCS only supports `amd64` images. The container can start (from the cached pull on the node) and respond to HTTP probes, but SPCS's orchestration layer detects the architecture mismatch and never transitions the pod to `READY`, blocking ingress routing.
+
+Confirmed by attempting `ALTER SERVICE ... FROM SPECIFICATION` which triggers a fresh image pull validation:
+```
+Failed to retrieve image: SPCS only supports image for amd64 architecture.
+Please rebuild your image with '--platform linux/amd64' option.
+```
+
+**Fix:** Added `--platform linux/amd64` to both `docker build` commands in `.github/workflows/deploy.yml`:
+
+```yaml
+docker build --platform linux/amd64 -f app/Dockerfile app/ ...
+docker build --platform linux/amd64 -f generator/Dockerfile generator/ ...
+```
+
+**Prevention:** Never push images to the SPCS registry from an ARM Mac without `--platform linux/amd64`. All production builds should go through the GitHub Actions workflow (which runs on `ubuntu-latest` / AMD64), not from a local machine.
+
+---
+
+## Issue 17 — `snow spcs service create` fails on re-deploy (service already exists)
+
+**Symptom:** Re-running the deploy workflow after the first green run causes job 5 (SPCS Service Deploy) to fail because `snow spcs service create` errors if the named service already exists.
+
+**Root cause:** `snow spcs service create` is not idempotent — it fails if the service already exists with no `--if-not-exists` flag available.
+
+**Fix:** Changed the deploy step to attempt `upgrade` first (idempotent — updates spec and restarts pods), falling back to `create` only if the service doesn't exist yet:
+
+```yaml
+- name: Deploy SPCS service
+  run: |
+    snow spcs service upgrade PAYMENT_DASHBOARD --spec-path spcs/service_spec.yaml --database PAYMENTS_DB --schema APP \
+      || snow spcs service create PAYMENT_DASHBOARD --spec-path spcs/service_spec.yaml --compute-pool PAYMENTS_DASHBOARD_POOL --database PAYMENTS_DB --schema APP
+```

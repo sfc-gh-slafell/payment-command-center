@@ -100,23 +100,33 @@ GRANT READ ON IMAGE REPOSITORY PAYMENTS_DB.APP.DASHBOARD_REPO TO ROLE PAYMENTS_A
 
 **Error pattern:** `003001 (42501): Insufficient privileges to operate on schema 'APP'` means the role lacks `CREATE SERVICE` on that schema.
 
-### Deployment Command
+### Deployment Command (Idempotent Pattern)
+
+Use `upgrade` first (idempotent — updates spec and restarts pods), fallback to `create` if service doesn't exist:
 
 ```bash
-snow spcs service create PAYMENT_DASHBOARD \
+# Idempotent deployment — works for both initial deploy and updates
+snow spcs service upgrade PAYMENT_DASHBOARD \
   --spec-path spcs/service_spec.yaml \
-  --compute-pool PAYMENTS_DASHBOARD_POOL \
   --database PAYMENTS_DB \
-  --schema APP
+  --schema APP \
+  || snow spcs service create PAYMENT_DASHBOARD \
+      --spec-path spcs/service_spec.yaml \
+      --compute-pool PAYMENTS_DASHBOARD_POOL \
+      --database PAYMENTS_DB \
+      --schema APP
 ```
+
+**Rationale:** `snow spcs service create` fails if service already exists (not idempotent). Using `upgrade || create` pattern makes CI re-runnable.
 
 ## Common Pitfalls
 
 1. **"unknown option 'serviceRoles'"** — Remove `serviceRoles` from spec. It's not a valid SPCS option.
 2. **"Insufficient privileges on schema 'APP'"** — Role needs `CREATE SERVICE` on the schema AND `USAGE` on the compute pool.
-3. **Image not found** — Image path must use the internal format `/<DB>/<SCHEMA>/<REPO>/<IMAGE>:<TAG>` (leading slash, no registry hostname).
+3. **Image not found** — Image path must use the internal format `/<DB>/<SCHEMA>/<REPO>/<IMAGE>:<TAG>` (leading slash, no registry hostname). Role must have `READ` on the image repository.
 4. **Service won't start** — Check readiness probe path exists in the container. `/health` must return 200.
 5. **Resource limits too low** — Minimum 512Mi memory for most Python apps. FastAPI + React needs at least 1Gi.
+6. **Service create fails on re-deploy** — Use `snow spcs service upgrade` first, fallback to `create` if it doesn't exist. `create` is not idempotent.
 
 ## Valid vs Invalid Spec Keys
 

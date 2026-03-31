@@ -15,10 +15,12 @@ Encode the cross-cutting CI/CD patterns that prevent environment variable, secre
 
 `SNOWFLAKE_ACCOUNT` does NOT automatically propagate from workflow-level `env` to every job. It must be explicitly set in each job that connects to Snowflake.
 
+If you only have `SNOWFLAKE_ORGANIZATION_NAME` and `SNOWFLAKE_ACCOUNT_NAME` secrets (not a combined `SNOWFLAKE_ACCOUNT`), use `format()` to combine them:
+
 ```yaml
 # WRONG — workflow-level env doesn't propagate to all tools
 env:
-  SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+  SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}  # May be empty!
 
 jobs:
   dbt:
@@ -26,12 +28,12 @@ jobs:
     steps:
       - run: dbt run  # FAILS: "Account must be specified"
 
-# CORRECT — set in each job's env
+# CORRECT — set in each job's env with format()
 jobs:
   dbt:
     runs-on: ubuntu-latest
     env:
-      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_ACCOUNT: ${{ format('{0}-{1}', secrets.SNOWFLAKE_ORGANIZATION_NAME, secrets.SNOWFLAKE_ACCOUNT_NAME) }}
     steps:
       - run: dbt run  # Works
 ```
@@ -141,6 +143,23 @@ Each job needs its own complete set of env vars. Here's the matrix:
 4. **Terraform state lost** — Use `actions/cache` to persist `terraform.tfstate` between runs.
 5. **connections.toml not found** — Snow CLI looks in `~/.snowflake/connections.toml`. Must `mkdir -p ~/.snowflake` first.
 6. **Job env vs step env** — Job-level `env:` applies to all steps. Step-level `env:` only applies to that step. Prefer job-level for Snowflake vars.
+
+## Workflow Trigger Pattern
+
+Use `workflow_dispatch` for manual deployment control instead of automatic push triggers:
+
+```yaml
+# Recommended for deploy workflows
+on:
+  workflow_dispatch:
+
+# Avoid for production deploys (auto-triggers on every push)
+on:
+  push:
+    branches: [main]
+```
+
+**Rationale:** Manual trigger prevents accidental deploys and allows `-input=false` debugging before production automation.
 
 ## CI Workflow Pattern (Lint Only)
 

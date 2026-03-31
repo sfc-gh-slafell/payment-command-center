@@ -20,9 +20,8 @@ def create_producer() -> Producer:
             "acks": "all",
             "linger.ms": 5,
             "batch.size": 16384,
-            # Message size limits aligned with broker (10 MB)
+            # Message size limit aligned with broker (10 MB)
             "message.max.bytes": 10485760,
-            "max.request.size": 10485760,
         }
     )
 

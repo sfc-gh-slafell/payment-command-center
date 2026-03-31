@@ -80,7 +80,7 @@ resource "snowflake_execute" "compute_pool" {
     restore-keys: tfstate-
 
 - name: Terraform Apply
-  run: terraform apply -auto-approve
+  run: terraform apply -auto-approve -input=false
 
 - name: Cache Terraform state
   uses: actions/cache@v4
@@ -90,6 +90,8 @@ resource "snowflake_execute" "compute_pool" {
 ```
 
 **Never run `terraform apply` without restoring state first** — this causes every object to be re-created, triggering "already exists" errors.
+
+**Always use `-input=false`** — prevents Terraform from hanging on missing variables in CI (GitHub Actions has no stdin).
 
 ### Grant Hierarchy
 
@@ -119,6 +121,8 @@ ACCOUNTADMIN (Terraform only — never for app workloads)
 3. **Grant to non-existent role** — Ensure role resources are created before grant resources using `depends_on`.
 4. **Compute pool CREATE fails** — No `CREATE OR REPLACE` for compute pools. Use `IF NOT EXISTS`.
 5. **Provider v2 breaking changes** — v2.x uses `organization_name` + `account_name`, not legacy `account`.
+6. **Network policy blocking CI** — GitHub Actions IPs must be allowlisted. Use user-level network policy with GitHub Actions CIDR ranges if account has restrictive policy.
+7. **Terraform hangs in CI** — Missing variables cause interactive prompts. Always use `-input=false` in CI.
 
 ## Quick Reference
 

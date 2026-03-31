@@ -53,7 +53,13 @@ app.include_router(latency_router)
 
 @app.get("/health")
 async def health():
-    """Health check returning connection pool status."""
+    """Lightweight readiness probe — confirms the process is up."""
+    return {"status": "ok"}
+
+
+@app.get("/api/v1/health")
+async def deep_health():
+    """Full health check including Snowflake connection pool status."""
     status = (
         _client.health_check()
         if _client

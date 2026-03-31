@@ -66,7 +66,7 @@ migrations/
   V1.0.0__create_raw_landing_table.sql
   V1.1.0__grant_raw_table_privileges.sql
   V1.2.0__create_interactive_tables.sql
-  V1.3.0__alter_interactive_warehouse.sql
+  V1.3.0__resume_interactive_warehouse.sql
   V1.4.0__grant_serve_schema_privileges.sql
 ```
 
@@ -75,6 +75,25 @@ migrations/
 - Separator: double underscore `__`
 - Description: snake_case
 - Extension: `.sql`
+
+### Interactive Warehouse DDL Patterns
+
+**WRONG:** No such syntax exists for table-to-warehouse association:
+```sql
+-- ❌ INVALID — syntax error "unexpected 'TABLES'"
+ALTER WAREHOUSE PAYMENTS_INTERACTIVE_WH SET TABLES = (...)
+
+-- ❌ INVALID — syntax error "unexpected 'WAREHOUSE'"
+ALTER INTERACTIVE WAREHOUSE PAYMENTS_INTERACTIVE_WH ...
+```
+
+**CORRECT:** Interactive tables automatically use the interactive warehouse for serving queries. No explicit association DDL needed:
+```sql
+-- ✅ VALID — resume if suspended, but no association DDL required
+ALTER WAREHOUSE PAYMENTS_INTERACTIVE_WH RESUME IF SUSPENDED;
+```
+
+**Note:** Use `ALTER INTERACTIVE TABLE ... SET WAREHOUSE = <refresh_wh>` to set the *refresh* warehouse (for background updates), not the serving warehouse.
 
 ### CI Integration
 
@@ -98,6 +117,7 @@ migrations/
 3. **Config file not found** — `working-directory` doesn't point to the directory containing `schemachange-config.yml`.
 4. **connections.toml permission denied** — File must be `chmod 0600`. Snowflake driver enforces this.
 5. **Migration re-execution** — schemachange tracks applied versions in `SCHEMACHANGE_HISTORY` table. Don't modify already-applied V scripts.
+6. **Syntax error on interactive warehouse DDL** — No `SET TABLES` or `ALTER INTERACTIVE WAREHOUSE` syntax exists. Interactive tables auto-use interactive warehouses for serving.
 
 ## Quick Reference
 

@@ -42,11 +42,11 @@ curl http://localhost:8000/status
 
 ```sql
 -- Check SPCS service status
-SELECT SYSTEM$GET_SERVICE_STATUS('PAYMENTS_DB.APP.PAYMENT_COMMAND_CENTER');
+SELECT SYSTEM$GET_SERVICE_STATUS('PAYMENTS_DB.APP.PAYMENT_DASHBOARD');
 ```
 
 - [ ] Service status = `READY`
-- [ ] Dashboard loads at service public endpoint
+- [ ] Dashboard loads at: **https://mxzzee-sfpscogs-slafell-aws-2.snowflakecomputing.app**
 
 ### HP Connector Status
 
@@ -257,19 +257,25 @@ If refresh is failing:
 
 ```sql
 -- Check SPCS service status
-SELECT SYSTEM$GET_SERVICE_STATUS('PAYMENTS_DB.APP.PAYMENT_COMMAND_CENTER');
+SELECT SYSTEM$GET_SERVICE_STATUS('PAYMENTS_DB.APP.PAYMENT_DASHBOARD');
 
--- Check service logs
-SELECT value FROM TABLE(
-  SYSTEM$GET_SERVICE_LOGS('PAYMENTS_DB.APP.PAYMENT_COMMAND_CENTER', 0, 'dashboard', 100)
-);
+-- Check service logs (note: CALL syntax required, not SELECT FROM TABLE)
+CALL SYSTEM$GET_SERVICE_LOGS('PAYMENTS_DB.APP.PAYMENT_DASHBOARD', '0', 'dashboard', 100);
 ```
 
-If unhealthy:
+> **PENDING with "Readiness probe is failing" — but logs show 200 OK?**
+> This is a known SPCS status-reporting lag that occurs after a suspend/resume cycle.
+> The status API can remain stuck at PENDING even when the container is healthy.
+> **Always check the logs first**: if Uvicorn shows `Application startup complete` and
+> `GET /health HTTP/1.1" 200 OK`, the service is operational. The ingress URL will respond
+> with a 302 auth redirect (expected — Snowflake SSO). A further suspend/resume cycle
+> may eventually clear the status, but it is not required for the service to be accessible.
+
+If genuinely unhealthy (logs show errors or crash loops):
 ```sql
 -- Restart service
-ALTER SERVICE PAYMENTS_DB.APP.PAYMENT_COMMAND_CENTER SUSPEND;
-ALTER SERVICE PAYMENTS_DB.APP.PAYMENT_COMMAND_CENTER RESUME;
+ALTER SERVICE PAYMENTS_DB.APP.PAYMENT_DASHBOARD SUSPEND;
+ALTER SERVICE PAYMENTS_DB.APP.PAYMENT_DASHBOARD RESUME;
 ```
 
 ---

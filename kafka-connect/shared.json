@@ -1,7 +1,8 @@
 {
   "name": "auth-events-sink-payments",
   "config": {
-    "connector.class": "com.snowflake.kafka.connector.SnowflakeStreamingSinkConnector",
+    "connector.class": "com.snowflake.kafka.connector.SnowflakeSinkConnector",
+    "snowflake.ingestion.method": "SNOWPIPE_STREAMING",
     "tasks.max": "24",
     "topics": "payments.auth",
 
