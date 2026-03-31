@@ -18,3 +18,9 @@ variable "snowflake_role" {
   type        = string
   default     = "SYSADMIN"
 }
+
+variable "snowflake_private_key" {
+  description = "RSA private key content (PKCS8 PEM) for key-pair authentication"
+  type        = string
+  sensitive   = true
+}
