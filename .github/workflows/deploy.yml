@@ -123,60 +123,34 @@ jobs:
       - name: Docker login to Snowflake registry
         run: |
           snow spcs image-registry login --connection default
-          # Debug: show what docker login stored (keys only, no secrets)
-          python3 -c "
-import json, sys
-try:
-    with open('/home/runner/.docker/config.json') as f:
-        cfg = json.load(f)
-    print('credsStore:', cfg.get('credsStore', 'NONE'))
-    print('credHelpers:', cfg.get('credHelpers', {}))
-    print('Auth keys stored:')
-    for k in cfg.get('auths', {}):
-        print(' -', repr(k))
-except Exception as e:
-    print('ERROR reading config:', e, file=sys.stderr)
-"
+          python3 -c "import json,sys; cfg=json.load(open('/home/runner/.docker/config.json')); print('credsStore:',cfg.get('credsStore','NONE')); print('credHelpers:',cfg.get('credHelpers',{})); print('Auth keys:',[k for k in cfg.get('auths',{})])"
       - name: Extract credentials into explicit Docker config
         run: |
-          REGISTRY="${REGISTRY_HOST,,}"
           mkdir -p /tmp/docker-explicit
-          python3 - <<'PYEOF'
-import json, subprocess, base64, os, sys
-
-registry = os.environ['REGISTRY_HOST'].lower()
-config_path = '/home/runner/.docker/config.json'
-
-with open(config_path) as f:
-    cfg = json.load(f)
-
-# Try auths section first
-auth_b64 = cfg.get('auths', {}).get(registry, {}).get('auth')
-
-# Try credential helper if auths is empty
-if not auth_b64:
-    creds_store = cfg.get('credsStore') or cfg.get('credHelpers', {}).get(registry)
-    if creds_store:
-        result = subprocess.run(
-            [f'docker-credential-{creds_store}', 'get'],
-            input=registry.encode(), capture_output=True
-        )
-        if result.returncode == 0:
-            creds = json.loads(result.stdout)
-            auth_str = f"{creds['Username']}:{creds['Secret']}"
-            auth_b64 = base64.b64encode(auth_str.encode()).decode()
-        else:
-            print(f"credential helper error: {result.stderr.decode()}", file=sys.stderr)
-
-if not auth_b64:
-    print("ERROR: no credentials found for", registry, file=sys.stderr)
-    sys.exit(1)
-
-explicit = {'auths': {registry: {'auth': auth_b64}}}
-with open('/tmp/docker-explicit/config.json', 'w') as f:
-    json.dump(explicit, f)
-print(f"Credentials written to /tmp/docker-explicit/config.json for {registry}")
-PYEOF
+          cat > /tmp/extract_creds.py << 'PYEOF'
+          import json, subprocess, base64, os, sys
+          registry = os.environ['REGISTRY_HOST'].lower()
+          with open('/home/runner/.docker/config.json') as f:
+              cfg = json.load(f)
+          auth_b64 = cfg.get('auths', {}).get(registry, {}).get('auth')
+          if not auth_b64:
+              creds_store = cfg.get('credsStore') or cfg.get('credHelpers', {}).get(registry)
+              if creds_store:
+                  r = subprocess.run([f'docker-credential-{creds_store}', 'get'],
+                                     input=registry.encode(), capture_output=True)
+                  if r.returncode == 0:
+                      c = json.loads(r.stdout)
+                      auth_b64 = base64.b64encode(f"{c['Username']}:{c['Secret']}".encode()).decode()
+                  else:
+                      print('credential helper error:', r.stderr.decode(), file=sys.stderr)
+          if not auth_b64:
+              print('ERROR: no credentials found for', registry, file=sys.stderr); sys.exit(1)
+          explicit = {'auths': {registry: {'auth': auth_b64}}}
+          with open('/tmp/docker-explicit/config.json', 'w') as f:
+              json.dump(explicit, f)
+          print(f'Credentials written for {registry}')
+          PYEOF
+          python3 /tmp/extract_creds.py
       - name: Build and push app image
         env:
           DOCKER_CONFIG: /tmp/docker-explicit
