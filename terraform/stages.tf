@@ -21,6 +21,14 @@ resource "snowflake_execute" "dashboard_repo" {
   query   = "SHOW IMAGE REPOSITORIES LIKE 'DASHBOARD_REPO' IN SCHEMA \"${snowflake_database.payments_db.name}\".\"${snowflake_schema.app.name}\""
 }
 
+resource "snowflake_execute" "grant_repo_read_to_app_role" {
+  execute = "GRANT READ ON IMAGE REPOSITORY \"${snowflake_database.payments_db.name}\".\"${snowflake_schema.app.name}\".\"DASHBOARD_REPO\" TO ROLE PAYMENTS_APP_ROLE"
+  revert  = "REVOKE READ ON IMAGE REPOSITORY \"${snowflake_database.payments_db.name}\".\"${snowflake_schema.app.name}\".\"DASHBOARD_REPO\" FROM ROLE PAYMENTS_APP_ROLE"
+  query   = "SHOW GRANTS ON IMAGE REPOSITORY \"${snowflake_database.payments_db.name}\".\"${snowflake_schema.app.name}\".\"DASHBOARD_REPO\""
+
+  depends_on = [snowflake_execute.dashboard_repo]
+}
+
 # =============================================================================
 # Spec Stage — PAYMENTS_DB.APP.SPECS
 # =============================================================================
