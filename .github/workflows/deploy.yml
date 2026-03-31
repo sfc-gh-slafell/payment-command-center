@@ -53,9 +53,11 @@ jobs:
       - run: pip install schemachange
       - run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > /tmp/snowflake_key.p8
       - name: schemachange deploy
-        run: schemachange deploy
+        run: schemachange deploy --config-file-path schemachange/schemachange-config.yml
         env:
-          SNOWFLAKE_PASSWORD: ""
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ORGANIZATION_NAME }}-${{ secrets.SNOWFLAKE_ACCOUNT_NAME }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_AUTHENTICATOR: snowflake_jwt
           SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/snowflake_key.p8
 
   dbt-run:
@@ -85,12 +87,29 @@ jobs:
     needs: terraform-apply
     env:
       IMAGE_TAG: ${{ github.sha }}
+      REGISTRY_HOST: ${{ format('{0}-{1}.registry.snowflakecomputing.com', secrets.SNOWFLAKE_ORGANIZATION_NAME, secrets.SNOWFLAKE_ACCOUNT_NAME) }}
     steps:
       - uses: actions/checkout@v4
-      - name: Docker login to Snowflake registry
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install snowflake-cli
+      - run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > /tmp/snowflake_key.p8
+      - name: Configure snow CLI connection
         run: |
-          echo "${{ secrets.SNOWFLAKE_REGISTRY_PASSWORD }}" | \
-          docker login "${REGISTRY_HOST}" -u "${{ secrets.SNOWFLAKE_REGISTRY_USER }}" --password-stdin
+          mkdir -p ~/.snowflake
+          cat > ~/.snowflake/connections.toml <<EOF
+          [default]
+          organization_name = "${{ secrets.SNOWFLAKE_ORGANIZATION_NAME }}"
+          account_name = "${{ secrets.SNOWFLAKE_ACCOUNT_NAME }}"
+          user = "${{ secrets.SNOWFLAKE_USER }}"
+          authenticator = "SNOWFLAKE_JWT"
+          private_key_path = "/tmp/snowflake_key.p8"
+          role = "PAYMENTS_ADMIN_ROLE"
+          warehouse = "PAYMENTS_ADMIN_WH"
+          EOF
+      - name: Docker login to Snowflake registry
+        run: snow spcs image-registry login --connection default
       - name: Build and push app image
         run: |
           docker build -f app/Dockerfile app/ \
@@ -115,15 +134,23 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install snowflake-cli-labs
+      - run: pip install snowflake-cli
       - run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > /tmp/snowflake_key.p8
+      - name: Configure snow CLI connection
+        run: |
+          mkdir -p ~/.snowflake
+          cat > ~/.snowflake/connections.toml <<EOF
+          [default]
+          organization_name = "${{ secrets.SNOWFLAKE_ORGANIZATION_NAME }}"
+          account_name = "${{ secrets.SNOWFLAKE_ACCOUNT_NAME }}"
+          user = "${{ secrets.SNOWFLAKE_USER }}"
+          authenticator = "SNOWFLAKE_JWT"
+          private_key_path = "/tmp/snowflake_key.p8"
+          role = "PAYMENTS_APP_ROLE"
+          warehouse = "PAYMENTS_ADMIN_WH"
+          EOF
       - name: Deploy SPCS service
-        run: snow spcs service deploy
-        working-directory: spcs/
-        env:
-          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-          SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/snowflake_key.p8
+        run: snow spcs service create PAYMENT_DASHBOARD --spec-path spcs/service_spec.yaml --compute-pool PAYMENTS_DASHBOARD_POOL --database PAYMENTS_DB --schema APP
 
   kafka-connector-deploy:
     name: 6. Kafka Connector Deploy
@@ -133,6 +160,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Deploy HP connector
         run: |
+          if [ -z "${KAFKA_CONNECT_URL}" ]; then
+            echo "KAFKA_CONNECT_URL not configured — skipping connector deploy (requires live Kafka infrastructure)"
+            exit 0
+          fi
           curl -f -X POST "${KAFKA_CONNECT_URL}/connectors" \
             -H "Content-Type: application/json" \
             -d @kafka-connect/shared.json
