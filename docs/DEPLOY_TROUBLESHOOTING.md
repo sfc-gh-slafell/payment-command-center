@@ -169,6 +169,265 @@ provider "snowflake" {
 
 ---
 
+## Issue 6 — `003001: Insufficient privileges to operate on schema 'SERVE'` (schemachange V1.2.0)
+
+**Symptom:** schemachange migration `V1.2.0__create_interactive_tables.sql` failed with:
+```
+003001 (42501): Insufficient privileges to operate on schema 'SERVE'
+```
+
+**Root cause:** `CREATE INTERACTIVE TABLE` is a **separate privilege** from `CREATE TABLE` in Snowflake. `PAYMENTS_ADMIN_ROLE` had `CREATE TABLE` on the `SERVE` schema but not `CREATE INTERACTIVE TABLE`. The two privileges are distinct and must both be granted.
+
+**Fix:** Added `"CREATE INTERACTIVE TABLE"` to the `admin_schema_serve` grant in `terraform/grants.tf`:
+
+```hcl
+resource "snowflake_grant_privileges_to_account_role" "admin_schema_serve" {
+  account_role_name = snowflake_account_role.payments_admin.name
+  privileges        = ["USAGE", "CREATE TABLE", "CREATE INTERACTIVE TABLE", "CREATE DYNAMIC TABLE"]
+  on_schema {
+    schema_name = snowflake_schema.serve.fully_qualified_name
+  }
+}
+```
+
+**Note:** Interactive Tables are Dynamic Tables internally. `SHOW INTERACTIVE TABLES` reveals `create OR REPLACE dynamic table` in the `text` column. `CREATE INTERACTIVE TABLE` and `CREATE DYNAMIC TABLE` are both needed for full forward-compatibility.
+
+---
+
+## Issue 7 — `001003: syntax error` in schemachange V1.3.0 (invalid DDL for interactive warehouse)
+
+**Symptom (attempt 1):** Migration `V1.3.0__create_interactive_warehouse_table_assoc.sql` failed with:
+```
+001003: SQL compilation error: syntax error unexpected 'TABLES'
+```
+The offending SQL was: `ALTER WAREHOUSE PAYMENTS_INTERACTIVE_WH SET TABLES = (...)`
+
+**Root cause:** No such syntax exists. Interactive Tables do not need to be explicitly associated with an Interactive Warehouse via a `SET TABLES` clause. They use the Interactive Warehouse automatically for serving queries.
+
+**Fix — attempt 1:** Changed to `ALTER INTERACTIVE WAREHOUSE PAYMENTS_INTERACTIVE_WH ...`
+
+**Symptom (attempt 2):** Still failed with:
+```
+001003: SQL compilation error: syntax error unexpected 'WAREHOUSE'
+```
+
+**Root cause:** `ALTER INTERACTIVE WAREHOUSE` is also not valid Snowflake SQL. Interactive Warehouses are managed via standard `ALTER WAREHOUSE` syntax. Verified by running directly in Snowflake worksheet.
+
+**Side effect discovered:** During debugging, `ALTER INTERACTIVE TABLE PAYMENTS_DB.SERVE.IT_AUTH_MINUTE_METRICS SET WAREHOUSE = PAYMENTS_INTERACTIVE_WH` was accidentally run, changing the *refresh* warehouse from `PAYMENTS_REFRESH_WH` to `PAYMENTS_INTERACTIVE_WH`. Fixed immediately:
+```sql
+ALTER INTERACTIVE TABLE PAYMENTS_DB.SERVE.IT_AUTH_MINUTE_METRICS
+  SET WAREHOUSE = PAYMENTS_REFRESH_WH;
+```
+
+**Final fix:** Reduced V1.3.0 to only what is needed — resume the warehouse if suspended. No explicit table-to-warehouse association DDL exists or is needed:
+
+```sql
+-- Interactive tables automatically use the interactive warehouse for serving.
+-- No explicit association DDL is required or valid in Snowflake.
+ALTER WAREHOUSE PAYMENTS_INTERACTIVE_WH RESUME IF SUSPENDED;
+```
+
+---
+
+## Issue 8 — `SNOWFLAKE_ACCOUNT` env var empty across all jobs (dbt, schemachange, snow CLI)
+
+**Symptom:** Multiple jobs failed with account-related errors:
+- dbt: `251001: Account must be specified`
+- snow CLI: `251001: Account must be specified`
+
+**Root cause:** The top-level workflow env had:
+```yaml
+env:
+  SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+```
+The secret `SNOWFLAKE_ACCOUNT` does not exist — only `SNOWFLAKE_ORGANIZATION_NAME` and `SNOWFLAKE_ACCOUNT_NAME` are defined. GitHub Actions evaluates a missing secret as an empty string, so every job inherited `SNOWFLAKE_ACCOUNT=""`.
+
+**Fix:** Override `SNOWFLAKE_ACCOUNT` at the **job level** using `format()` to combine the two secrets:
+
+```yaml
+jobs:
+  dbt-run:
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ format('{0}-{1}', secrets.SNOWFLAKE_ORGANIZATION_NAME, secrets.SNOWFLAKE_ACCOUNT_NAME) }}
+
+  docker-push:
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ format('{0}-{1}', secrets.SNOWFLAKE_ORGANIZATION_NAME, secrets.SNOWFLAKE_ACCOUNT_NAME) }}
+
+  spcs-deploy:
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ format('{0}-{1}', secrets.SNOWFLAKE_ORGANIZATION_NAME, secrets.SNOWFLAKE_ACCOUNT_NAME) }}
+```
+
+For schemachange, pass directly in the step env:
+```yaml
+env:
+  SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ORGANIZATION_NAME }}-${{ secrets.SNOWFLAKE_ACCOUNT_NAME }}
+```
+
+---
+
+## Issue 9 — `snow CLI connections.toml`: `organization_name`/`account_name` keys not recognised
+
+**Symptom:** `snow spcs image-registry login` failed with a connection error despite `connections.toml` being present.
+
+**Root cause:** The `connections.toml` was written with separate `organization_name` and `account_name` fields. The Snowflake CLI expects the **combined** `account` field in `org-account` format.
+
+**Fix:**
+```toml
+[default]
+account = "SFPSCOGS-SLAFELL_AWS_2"   # combined org-account, not separate fields
+user = "SLAFELL"
+authenticator = "SNOWFLAKE_JWT"
+private_key_path = "/tmp/snowflake_key.p8"
+```
+
+Also: `connections.toml` must be `chmod 0600` or the CLI rejects it with a permissions error.
+
+---
+
+## Issue 10 — `docker/setup-buildx-action@v3` isolated builder has no host credentials
+
+**Symptom:** `docker buildx build --push` failed with `401 Unauthorized`.
+
+**Root cause:** `docker/setup-buildx-action@v3` creates a builder using the `docker-container` driver, which runs in an isolated container with its own filesystem. It cannot access the host's `~/.docker/config.json`, so credentials stored by `snow spcs image-registry login` are invisible to it.
+
+**Fix:** Removed `docker/setup-buildx-action@v3` entirely. The default `docker` driver (built into the Docker daemon) shares the host credential store.
+
+---
+
+## Issue 11 — `Get "https:/v2/": http: no Host in request URL` (Docker underscore hostname)
+
+**Symptom:** `docker push sfpscogs-slafell_aws_2.registry.snowflakecomputing.com/...` failed with:
+```
+Get "https:/v2/": http: no Host in request URL
+```
+
+**Root cause:** Docker's legacy distribution library uses Go's `net/url.Parse()` for registry URL construction. Go's URL parser rejects hostnames containing underscores per RFC 1123 (which permits only letters, digits, and hyphens in hostname labels). When the hostname is invalid, `url.Parse()` returns an empty `Host` field, and Docker constructs a malformed URL `https:/v2/` (single slash, no host).
+
+**Fix:** `snow spcs image-registry login` normalises the account identifier when calling `docker login` — it lowercases the entire string **and replaces underscores with hyphens**. The credential is therefore stored under `sfpscogs-slafell-aws-2.registry.snowflakecomputing.com` (RFC-compliant, all hyphens).
+
+The push hostname must match this. Compute `REGISTRY` in the workflow by applying the same normalisation:
+
+```yaml
+- name: Compute RFC-compliant registry hostname
+  run: |
+    REGISTRY=$(echo "${{ secrets.SNOWFLAKE_ORGANIZATION_NAME }}-${{ secrets.SNOWFLAKE_ACCOUNT_NAME }}" \
+      | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+    echo "REGISTRY=${REGISTRY}.registry.snowflakecomputing.com" >> "$GITHUB_ENV"
+```
+
+This resolves **both** the URL parsing failure and the credential key mismatch in one change, with no need for containerd-snapshotter workarounds.
+
+**Diagnosis method:** Added a debug step after `snow spcs image-registry login` to dump `~/.docker/config.json` auth keys:
+```yaml
+python3 -c "import json,sys; cfg=json.load(open('/home/runner/.docker/config.json')); \
+  print('Auth keys:', [k for k in cfg.get('auths', {})])"
+```
+Output revealed: `Auth keys: ['sfpscogs-slafell-aws-2.registry.snowflakecomputing.com']` — hyphens, not underscores.
+
+---
+
+## Issue 12 — `003001: Insufficient privileges to operate on schema 'APP'` (SPCS service create)
+
+**Symptom:** `snow spcs service create` failed with:
+```
+003001 (42501): Insufficient privileges to operate on schema 'APP'
+```
+
+**Root cause:** `PAYMENTS_APP_ROLE` had only `USAGE` on the `APP` schema. `CREATE SERVICE` is a separate privilege that must be granted explicitly, similar to `CREATE TABLE` or `CREATE STAGE`.
+
+**Fix:** Added `"CREATE SERVICE"` to the `app_schema_app` grant in `terraform/grants.tf`:
+
+```hcl
+resource "snowflake_grant_privileges_to_account_role" "app_schema_app" {
+  account_role_name = snowflake_account_role.payments_app.name
+  privileges        = ["USAGE", "CREATE SERVICE"]
+  on_schema {
+    schema_name = snowflake_schema.app.fully_qualified_name
+  }
+}
+```
+
+---
+
+## Issue 13 — `395018: Invalid spec: unknown option 'serviceRoles'`
+
+**Symptom:** `snow spcs service create` failed with:
+```
+395018 (22023): Invalid spec: unknown option 'serviceRoles' for 'spec'
+```
+
+**Root cause:** The `serviceRoles` field in `spcs/service_spec.yaml` is not supported in this Snowflake account's SPCS version.
+
+**Fix:** Removed the `serviceRoles` block from the service spec. The `dashboard` endpoint remains accessible via `public: true`:
+
+```yaml
+endpoints:
+  - name: dashboard
+    port: 8080
+    public: true
+```
+
+---
+
+## Issue 14 — `002003: Image repository 'PAYMENTS_DB.APP.DASHBOARD_REPO' does not exist or not authorized`
+
+**Symptom:** `snow spcs service create` failed with:
+```
+002003: SQL compilation error: Image repository 'PAYMENTS_DB.APP.DASHBOARD_REPO'
+does not exist or not authorized.
+```
+
+**Root cause:** Snowflake validates the image reference in the service spec at `CREATE SERVICE` time. `PAYMENTS_APP_ROLE` had no `READ` privilege on the `DASHBOARD_REPO` image repository, so Snowflake treats it as non-existent from that role's perspective.
+
+**Fix:** Added a `snowflake_execute` grant in `terraform/stages.tf` with `depends_on` the repository creation:
+
+```hcl
+resource "snowflake_execute" "grant_repo_read_to_app_role" {
+  execute = "GRANT READ ON IMAGE REPOSITORY \"${snowflake_database.payments_db.name}\".\"${snowflake_schema.app.name}\".\"DASHBOARD_REPO\" TO ROLE PAYMENTS_APP_ROLE"
+  revert  = "REVOKE READ ON IMAGE REPOSITORY \"${snowflake_database.payments_db.name}\".\"${snowflake_schema.app.name}\".\"DASHBOARD_REPO\" FROM ROLE PAYMENTS_APP_ROLE"
+  query   = "SHOW GRANTS ON IMAGE REPOSITORY \"${snowflake_database.payments_db.name}\".\"${snowflake_schema.app.name}\".\"DASHBOARD_REPO\""
+  depends_on = [snowflake_execute.dashboard_repo]
+}
+```
+
+---
+
+## Issue 15 — PAYMENTS_APP_ROLE missing USAGE on compute pool
+
+**Root cause (pre-emptive fix):** `CREATE SERVICE` requires `USAGE` on the compute pool used by the service. No grant existed for `PAYMENTS_APP_ROLE` on `PAYMENTS_DASHBOARD_POOL`. This was added alongside Issue 12 to avoid a sequential failure.
+
+**Fix:** Added a `snowflake_execute` grant in `terraform/compute_pools.tf`:
+
+```hcl
+resource "snowflake_execute" "grant_pool_to_app_role" {
+  execute    = "GRANT USAGE ON COMPUTE POOL PAYMENTS_DASHBOARD_POOL TO ROLE PAYMENTS_APP_ROLE"
+  revert     = "REVOKE USAGE ON COMPUTE POOL PAYMENTS_DASHBOARD_POOL FROM ROLE PAYMENTS_APP_ROLE"
+  query      = "SHOW GRANTS ON COMPUTE POOL PAYMENTS_DASHBOARD_POOL"
+  depends_on = [snowflake_execute.payments_dashboard_pool]
+}
+```
+
+---
+
+## First fully green run
+
+**Run:** [23776979677](https://github.com/sfc-gh-slafell/payment-command-center/actions/runs/23776979677)
+
+All 6 jobs passed in a single execution:
+
+| Job | Duration | Status |
+|-----|----------|--------|
+| 1. Terraform Apply | 23s | ✓ |
+| 2. schemachange Deploy | 21s | ✓ |
+| 3. dbt Run + Test | 37s | ✓ |
+| 4. Docker Build + Push | 10m13s | ✓ |
+| 5. SPCS Service Deploy | 26s | ✓ |
+| 6. Kafka Connector Deploy | 3s | ✓ |
+
+---
+
 ## Required GitHub Actions Secrets
 
 | Secret | Value | Notes |
