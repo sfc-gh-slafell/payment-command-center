@@ -52,9 +52,7 @@ def load_v4_throughput(window_min: int) -> pd.DataFrame:
             SELECT
                 DATE_TRUNC('SECOND', INGESTED_AT)                                    AS second_bucket,
                 COUNT(*)                                                              AS records_per_sec,
-                AVG(DATEDIFF('millisecond',
-                    TO_TIMESTAMP(RECORD_METADATA:SnowflakeConnectorPushTime::BIGINT / 1000),
-                    INGESTED_AT))                                                     AS avg_latency_ms
+                AVG(DATEDIFF('millisecond', EVENT_TS, INGESTED_AT))                  AS avg_latency_ms
             FROM PAYMENTS_DB.RAW.AUTH_EVENTS_RAW
             WHERE INGESTED_AT >= DATEADD('MINUTE', -{window_min}, CURRENT_TIMESTAMP())
             GROUP BY 1
@@ -172,7 +170,7 @@ with rps_col2:
 # ---------------------------------------------------------------------------
 st.subheader("Ingest Latency")
 st.caption(
-    "V4 HP: connector push → table visibility (INGESTED_AT). "
+    "V4 HP: event generation (EVENT_TS) → table visibility (INGESTED_AT) — true end-to-end latency. "
     "V3 Classic: Kafka CreateTime → connector push (SnowflakeConnectorPushTime)."
 )
 

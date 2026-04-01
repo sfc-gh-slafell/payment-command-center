@@ -338,16 +338,18 @@ ORDER BY m.start_time DESC;
 
 ### Measuring V4 HP throughput
 
-The `RECORD_METADATA` column captures `SnowflakeConnectorPushTime` — the timestamp when the connector pushed the record into the ingest buffer. Combined with `INGESTED_AT`, this gives end-to-end latency:
+The V4 HP table uses a user-defined pipe (Issue 22) that extracts `RECORD_METADATA` fields into
+individual named columns (`SOURCE_TOPIC`, `SOURCE_PARTITION`, `SOURCE_OFFSET`). There is **no
+`RECORD_METADATA` VARIANT column** in `AUTH_EVENTS_RAW`. Latency is measured as event generation
+time (`EVENT_TS`, from the payload) to Snowflake visibility (`INGESTED_AT`, set to
+`CURRENT_TIMESTAMP()` in the COPY INTO) — the true end-to-end latency from producer to query.
 
 ```sql
--- Records per second and avg latency — V4 HP
+-- Records per second and avg end-to-end latency — V4 HP
 SELECT
     DATE_TRUNC('SECOND', INGESTED_AT)                                          AS second_bucket,
     COUNT(*)                                                                    AS records_per_sec,
-    AVG(DATEDIFF('millisecond',
-        TO_TIMESTAMP(RECORD_METADATA:SnowflakeConnectorPushTime::BIGINT / 1000),
-        INGESTED_AT))                                                           AS avg_ingest_latency_ms
+    AVG(DATEDIFF('millisecond', EVENT_TS, INGESTED_AT))                        AS avg_ingest_latency_ms
 FROM PAYMENTS_DB.RAW.AUTH_EVENTS_RAW
 WHERE INGESTED_AT >= DATEADD('MINUTE', -5, CURRENT_TIMESTAMP())
 GROUP BY 1
