@@ -200,16 +200,16 @@ echo ""
 echo "--- [5] Schemachange migrations ---"
 echo ""
 
-MIGRATION_V3_TABLE="$PROJECT_DIR/schemachange/migrations/V1.9.0__create_v3_raw_table.sql"
-MIGRATION_V3_GRANTS="$PROJECT_DIR/schemachange/migrations/V1.10.0__grant_v3_table_privileges.sql"
+MIGRATION_V3_TABLE="$PROJECT_DIR/schemachange/migrations/V1.11.0__create_v3_raw_table.sql"
+MIGRATION_V3_GRANTS="$PROJECT_DIR/schemachange/migrations/V1.12.0__grant_v3_table_privileges.sql"
 
 if [ -f "$MIGRATION_V3_TABLE" ]; then
-  pass "V1.9.0 migration exists (AUTH_EVENTS_RAW_V3 table)"
+  pass "V1.11.0 migration exists (AUTH_EVENTS_RAW_V3 table)"
 
   if grep -qi 'AUTH_EVENTS_RAW_V3' "$MIGRATION_V3_TABLE"; then
     pass "AUTH_EVENTS_RAW_V3 table defined"
   else
-    fail "AUTH_EVENTS_RAW_V3 not found in V1.9.0 migration"
+    fail "AUTH_EVENTS_RAW_V3 not found in V1.11.0 migration"
   fi
 
   if grep -qi 'RECORD_CONTENT.*VARIANT\|VARIANT.*RECORD_CONTENT' "$MIGRATION_V3_TABLE"; then
@@ -224,14 +224,14 @@ if [ -f "$MIGRATION_V3_TABLE" ]; then
     fail "RECORD_METADATA VARIANT column missing"
   fi
 else
-  fail "V1.9.0 migration (create_v3_raw_table.sql) does not exist"
+  fail "V1.11.0 migration (create_v3_raw_table.sql) does not exist"
   fail "AUTH_EVENTS_RAW_V3 table definition not verified"
   fail "RECORD_CONTENT VARIANT not verified"
   fail "RECORD_METADATA VARIANT not verified"
 fi
 
 if [ -f "$MIGRATION_V3_GRANTS" ]; then
-  pass "V1.10.0 migration exists (V3 table grants)"
+  pass "V1.12.0 migration exists (V3 table grants)"
 
   if grep -qi 'GRANT INSERT' "$MIGRATION_V3_GRANTS" && grep -qi 'AUTH_EVENTS_RAW_V3' "$MIGRATION_V3_GRANTS"; then
     pass "INSERT grant on AUTH_EVENTS_RAW_V3 present"
@@ -245,7 +245,7 @@ if [ -f "$MIGRATION_V3_GRANTS" ]; then
     fail "PAYMENTS_INGEST_ROLE not referenced"
   fi
 else
-  fail "V1.10.0 migration (grant_v3_table_privileges.sql) does not exist"
+  fail "V1.12.0 migration (grant_v3_table_privileges.sql) does not exist"
   fail "INSERT grant not verified (file not found)"
   fail "PAYMENTS_INGEST_ROLE not verified (file not found)"
 fi
