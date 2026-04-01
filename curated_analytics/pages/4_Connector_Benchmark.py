@@ -47,14 +47,20 @@ with st.sidebar:
 def load_v4_throughput(window_min: int) -> pd.DataFrame:
     conn = get_connection()
     with conn.cursor() as cur:
+        # Filter and bucket on EVENT_TS (per-row UTC timestamp from generator).
+        # INGESTED_AT is a per-micro-partition timestamp set once when Snowpipe
+        # Streaming flushes a batch — it is NOT a per-row ingest time, so it
+        # cannot be used reliably for time-window filtering.
+        # Latency = EVENT_TS → INGESTED_AT measures batch-level ingest lag
+        # (time from event generation to when its micro-partition was written).
         cur.execute(
             f"""
             SELECT
-                DATE_TRUNC('SECOND', INGESTED_AT)                                    AS second_bucket,
+                DATE_TRUNC('SECOND', EVENT_TS)                                       AS second_bucket,
                 COUNT(*)                                                              AS records_per_sec,
                 AVG(DATEDIFF('millisecond', EVENT_TS, INGESTED_AT))                  AS avg_latency_ms
             FROM PAYMENTS_DB.RAW.AUTH_EVENTS_RAW
-            WHERE INGESTED_AT >= DATEADD('MINUTE', -{window_min}, CURRENT_TIMESTAMP())
+            WHERE EVENT_TS >= DATEADD('MINUTE', -{window_min}, CURRENT_TIMESTAMP())
             GROUP BY 1
             ORDER BY 1 ASC
             LIMIT 900
@@ -170,8 +176,10 @@ with rps_col2:
 # ---------------------------------------------------------------------------
 st.subheader("Ingest Latency")
 st.caption(
-    "V4 HP: event generation (EVENT_TS) → table visibility (INGESTED_AT) — true end-to-end latency. "
-    "V3 Classic: Kafka CreateTime → connector push (SnowflakeConnectorPushTime)."
+    "V4 HP: event generation (EVENT_TS) → micro-partition write (INGESTED_AT) — "
+    "batch-level ingest lag. INGESTED_AT is set once per Snowpipe Streaming micro-partition, "
+    "not per row. "
+    "V3 Classic: Kafka CreateTime → connector push (SnowflakeConnectorPushTime) — per-row."
 )
 
 lat_col1, lat_col2 = st.columns(2)
