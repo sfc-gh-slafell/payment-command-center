@@ -164,6 +164,8 @@ env -u SNOWFLAKE_CONNECTIONS_BUSINESS_CRITICAL_SESSION_TOKEN \
 | `003001: Insufficient privileges on schema 'APP'` | Missing `CREATE SERVICE` grant | `GRANT CREATE SERVICE ON SCHEMA PAYMENTS_DB.APP TO ROLE PAYMENTS_APP_ROLE` |
 | `SPCS only supports image for amd64` | ARM image pushed from Mac | Rebuild with `--platform linux/amd64` |
 | All API routes return 500 / DNS failure | `SNOWFLAKE_HOST` not used | Read `SNOWFLAKE_HOST` env var; pass as `host=` in connector (see Issue 26) |
+| `KeyError: 'SNOWFLAKE_USER'` on page load | `os.environ[]` hard-require; SPCS never injects `SNOWFLAKE_USER` | Use SPCS token auth (see pattern below); replace all `os.environ[]` with `os.getenv(..., "")` |
+| `397012: Image ... not found` on service create | Spec image tag (e.g. `:v1`) doesn't match what was pushed (`:latest`) | Match spec tag to pushed tag exactly; use `:latest` for local builds |
 | `395018: unknown option 'serviceRoles'` | Invalid spec key | Remove `serviceRoles` from `service_spec.yaml` |
 | Service stuck PENDING, readiness probe failing | ARM architecture image | `docker build --platform linux/amd64 ...` and push again |
 | Endpoint URL shows "provisioning in progress" | Normal — takes ~2 min | Wait and re-run `list-endpoints` |
@@ -188,16 +190,45 @@ GRANT READ ON IMAGE REPOSITORY PAYMENTS_DB.APP.DASHBOARD_REPO TO ROLE PAYMENTS_A
 **DO NOT set `SNOWFLAKE_HOST` or `SNOWFLAKE_ACCOUNT` in `service_spec.yaml`.**
 SPCS auto-injects the correct internal endpoint. Overriding it with the public URL causes DNS failure.
 
+**DO NOT use `os.environ["SNOWFLAKE_USER"]` or `os.environ["SNOWFLAKE_ACCOUNT"]` in SPCS code.**
+SPCS never injects these. Use `os.getenv(..., "")` with fallback, and authenticate via the token first.
+
+### Required pattern for ALL SPCS containers (FastAPI and Streamlit alike)
+
 ```python
-# app/backend/snowflake_client.py — correct pattern
-SNOWFLAKE_HOST = os.getenv("SNOWFLAKE_HOST", "")  # injected by SPCS
+_SPCS_TOKEN_PATH = "/snowflake/session/token"
 
-base_params = {"account": SNOWFLAKE_ACCOUNT, ...}
-if SNOWFLAKE_HOST:
-    base_params["host"] = SNOWFLAKE_HOST  # uses internal endpoint in SPCS
+def _connect():
+    params = {
+        "account":   os.getenv("SNOWFLAKE_ACCOUNT", ""),
+        "database":  os.getenv("SNOWFLAKE_DATABASE", "PAYMENTS_DB"),
+        "warehouse": os.getenv("SNOWFLAKE_WAREHOUSE", "PAYMENTS_REFRESH_WH"),
+        "role":      os.getenv("SNOWFLAKE_ROLE", ""),
+    }
+    # Strip empty strings so connector doesn't see blank params
+    params = {k: v for k, v in params.items() if v != ""}
+
+    host = os.getenv("SNOWFLAKE_HOST", "")  # always injected by SPCS
+    if host:
+        params["host"] = host
+
+    # 1. SPCS OAuth token — no user/password needed (production)
+    try:
+        from pathlib import Path
+        token = Path(_SPCS_TOKEN_PATH).read_text().strip()
+        return snowflake.connector.connect(**params, token=token, authenticator="oauth")
+    except FileNotFoundError:
+        pass
+
+    # 2. Key-pair (local dev)
+    user = os.getenv("SNOWFLAKE_USER", "")
+    private_key = _load_private_key()
+    if private_key:
+        return snowflake.connector.connect(**params, user=user, private_key=private_key)
+
+    # 3. Password (last resort)
+    return snowflake.connector.connect(**params, user=user, password=os.getenv("SNOWFLAKE_PASSWORD", ""))
 ```
-
-OAuth token is always at `/snowflake/session/token` inside the container.
 
 ---
 

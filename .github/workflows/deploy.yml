@@ -135,6 +135,13 @@ jobs:
             -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-generator:latest"
           docker push "${REGISTRY}/payments_db/app/dashboard_repo/payment-generator:${IMAGE_TAG}"
           docker push "${REGISTRY}/payments_db/app/dashboard_repo/payment-generator:latest"
+      - name: Build and push analytics image
+        run: |
+          docker build --platform linux/amd64 -f curated_analytics/Dockerfile curated_analytics/ \
+            -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-analytics:${IMAGE_TAG}" \
+            -t "${REGISTRY}/payments_db/app/dashboard_repo/payment-analytics:latest"
+          docker push "${REGISTRY}/payments_db/app/dashboard_repo/payment-analytics:${IMAGE_TAG}"
+          docker push "${REGISTRY}/payments_db/app/dashboard_repo/payment-analytics:latest"
 
   spcs-deploy:
     name: 5. SPCS Service Deploy
@@ -162,11 +169,15 @@ jobs:
           warehouse = "PAYMENTS_ADMIN_WH"
           EOF
           chmod 0600 ~/.snowflake/connections.toml
-      - name: Deploy SPCS service
+      - name: Deploy ops dashboard service
         run: |
           # `upgrade` updates spec + restarts pods if service exists; falls back to create if not.
           snow spcs service upgrade PAYMENT_DASHBOARD --spec-path spcs/service_spec.yaml --database PAYMENTS_DB --schema APP \
             || snow spcs service create PAYMENT_DASHBOARD --spec-path spcs/service_spec.yaml --compute-pool PAYMENTS_DASHBOARD_POOL --database PAYMENTS_DB --schema APP
+      - name: Deploy analytics dashboard service
+        run: |
+          snow spcs service upgrade PAYMENT_ANALYTICS --spec-path spcs/analytics_service_spec.yaml --database PAYMENTS_DB --schema APP \
+            || snow spcs service create PAYMENT_ANALYTICS --spec-path spcs/analytics_service_spec.yaml --compute-pool PAYMENTS_DASHBOARD_POOL --database PAYMENTS_DB --schema APP
 
   kafka-connector-deploy:
     name: 6. Kafka Connector Deploy

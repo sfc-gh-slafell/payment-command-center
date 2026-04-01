@@ -236,16 +236,16 @@ For v4.x RC releases, download directly from Maven Central:
 ```dockerfile
 FROM confluentinc/cp-kafka-connect:7.6.0
 
-# Install Snowflake Kafka Connector v4.0.0-rc8 from Maven Central
+# Install Snowflake Kafka Connector v4.0.0-rc9 from Maven Central
 # Requires Bouncy Castle FIPS cryptography libraries (not regular BC)
 RUN mkdir -p /usr/share/confluent-hub-components/snowflakeinc-snowflake-kafka-connector && \
     cd /usr/share/confluent-hub-components/snowflakeinc-snowflake-kafka-connector && \
-    curl -sLO https://repo1.maven.org/maven2/com/snowflake/snowflake-kafka-connector/4.0.0-rc8/snowflake-kafka-connector-4.0.0-rc8.jar && \
+    curl -sLO https://repo1.maven.org/maven2/com/snowflake/snowflake-kafka-connector/4.0.0-rc9/snowflake-kafka-connector-4.0.0-rc9.jar && \
     curl -sLO https://repo1.maven.org/maven2/org/bouncycastle/bc-fips/1.0.2.5/bc-fips-1.0.2.5.jar && \
     curl -sLO https://repo1.maven.org/maven2/org/bouncycastle/bcpkix-fips/1.0.7/bcpkix-fips-1.0.7.jar
 ```
 
-**Critical:** v4.0.0-rc8 requires **Bouncy Castle FIPS** jars (`bc-fips` + `bcpkix-fips`), NOT regular Bouncy Castle (`bcprov` + `bcpkix`).
+**Critical:** v4.0.0-rc9 requires **Bouncy Castle FIPS** jars (`bc-fips` + `bcpkix-fips`), NOT regular Bouncy Castle (`bcprov` + `bcpkix`).
 
 **Error if regular BC used:**
 ```
@@ -387,6 +387,55 @@ curl -X POST -H "Content-Type: application/json" \
   --data @kafka-connect/shared.json \
   http://localhost:8083/connectors
 ```
+
+### Recovering from Docker Volume Prune
+
+`docker system prune --volumes` wipes Kafka's data directory, destroying all topics including the internal Connect bookkeeping topics. This causes a cascade of failures if kafka-connect is still running.
+
+**Failure sequence:**
+1. Kafka restarts fresh with no topics
+2. kafka-connect (still running) reconnects and Kafka auto-creates `_connect-configs/offsets/status` with `cleanup.policy=delete`
+3. Restarting kafka-connect fails immediately: `TopicAdmin.verifyTopicCleanupPolicyOnlyCompact`
+4. After fixing and restarting, connector config is gone (was in deleted `_connect-configs` topic)
+
+**Full recovery procedure:**
+
+```bash
+# 1. Start the broker if it was pruned
+docker compose up -d kafka
+
+# 2. Delete the misconfigured internal topics (auto-created with wrong policy)
+docker exec payments-kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server kafka:29092 --delete --topic _connect-configs
+docker exec payments-kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server kafka:29092 --delete --topic _connect-offsets
+docker exec payments-kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server kafka:29092 --delete --topic _connect-status
+
+# 3. Start kafka-connect (recreates topics with correct compact policy)
+docker compose up -d kafka-connect
+
+# 4. Wait for healthy, then re-register connector from local config
+sleep 20
+curl -s -X POST http://localhost:8083/connectors \
+  -H "Content-Type: application/json" \
+  --data @kafka-connect/shared.json
+
+# 5. Verify RUNNING
+curl -s http://localhost:8083/connectors/auth-events-sink-payments/status \
+  | jq '.connector.state, .tasks[].state'
+```
+
+**Prevention:** Use `docker builder prune -f` instead of `docker system prune --volumes` to free build cache without touching running/stopped containers or volumes. Only use `--volumes` when a full reset is intentional, then bring the full stack down first:
+```bash
+docker compose down
+docker system prune --volumes
+docker compose up -d
+```
+
+**Key rule:** `kafka-connect/shared.json` is the authoritative connector config. The `_connect-configs` Kafka topic is a runtime cache — it does not survive a volume prune.
+
+---
 
 ## Quick Reference
 
