@@ -25,31 +25,61 @@ st.set_page_config(
 # Snowflake connection (shared via session_state)
 # ---------------------------------------------------------------------------
 
+_SPCS_TOKEN_PATH = "/snowflake/session/token"
+
+_BASE_PARAMS = {
+    "account":   os.getenv("SNOWFLAKE_ACCOUNT", ""),
+    "warehouse": os.getenv("SNOWFLAKE_WAREHOUSE", "PAYMENTS_REFRESH_WH"),
+    "database":  os.getenv("SNOWFLAKE_DATABASE", "PAYMENTS_DB"),
+    "schema":    "CURATED",
+    "role":      os.getenv("SNOWFLAKE_ROLE", ""),
+    "session_parameters": {"QUERY_TAG": "payment-analytics-streamlit"},
+}
+
+
 def _connect() -> snowflake.connector.SnowflakeConnection:
-    """Create Snowflake connection from environment variables."""
+    """Create Snowflake connection.
+
+    Priority:
+    1. SPCS OAuth token (production — no user/password needed)
+    2. Key-pair auth (local development)
+    3. Password auth (last resort)
+    """
+    params = {k: v for k, v in _BASE_PARAMS.items() if v != ""}
+    host = os.getenv("SNOWFLAKE_HOST", "")
+    if host:
+        params["host"] = host
+
+    # 1. SPCS token
+    try:
+        from pathlib import Path
+        token = Path(_SPCS_TOKEN_PATH).read_text().strip()
+        return snowflake.connector.connect(**params, token=token, authenticator="oauth")
+    except FileNotFoundError:
+        pass
+
+    # 2. Key-pair
+    private_key = _load_private_key()
+    user = os.getenv("SNOWFLAKE_USER", "")
+    if private_key:
+        return snowflake.connector.connect(**params, user=user, private_key=private_key)
+
+    # 3. Password
     return snowflake.connector.connect(
-        account=os.environ["SNOWFLAKE_ACCOUNT"],
-        user=os.environ["SNOWFLAKE_USER"],
-        password=os.environ.get("SNOWFLAKE_PASSWORD"),
-        private_key=_load_private_key(),
-        warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE", "PAYMENTS_REFRESH_WH"),
-        database=os.environ.get("SNOWFLAKE_DATABASE", "PAYMENTS_DB"),
-        schema="CURATED",
-        role=os.environ.get("SNOWFLAKE_ROLE"),
-        session_parameters={"QUERY_TAG": "payment-analytics-streamlit"},
+        **params, user=user, password=os.getenv("SNOWFLAKE_PASSWORD", "")
     )
 
 
 def _load_private_key():
     """Load private key bytes from file path env var, or return None."""
-    path = os.environ.get("SNOWFLAKE_PRIVATE_KEY_PATH")
+    path = os.getenv("SNOWFLAKE_PRIVATE_KEY_PATH")
     if not path:
         return None
     from cryptography.hazmat.backends import default_backend
     from cryptography.hazmat.primitives.serialization import (
         Encoding, NoEncryption, PrivateFormat, load_pem_private_key,
     )
-    passphrase = os.environ.get("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE", "").encode() or None
+    passphrase = os.getenv("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE", "").encode() or None
     with open(path, "rb") as f:
         key = load_pem_private_key(f.read(), password=passphrase, backend=default_backend())
     return key.private_bytes(Encoding.DER, PrivateFormat.PKCS8, NoEncryption())
