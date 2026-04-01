@@ -901,6 +901,79 @@ void _baseline;
 
 ---
 
+## Issue 32 — `analytics_service_spec.yaml` referenced image tag `:v1` but image was pushed as `:latest`
+
+**Symptom:** `snow spcs service create PAYMENT_ANALYTICS` failed immediately with:
+```
+397012: Image /payments_db/app/dashboard_repo/payment-analytics:v1 not found.
+Please verify the image exists in the image repository.
+```
+
+**Root cause:** `spcs/analytics_service_spec.yaml` was written with a hardcoded `:v1` tag. The local build and push used `:latest` (matching the CI workflow pattern for the existing ops dashboard). The registry had no `:v1` digest at all.
+
+**Fix:** Updated `analytics_service_spec.yaml` to use `:latest`:
+```yaml
+# Before
+image: /PAYMENTS_DB/APP/DASHBOARD_REPO/payment-analytics:v1
+
+# After
+image: /PAYMENTS_DB/APP/DASHBOARD_REPO/payment-analytics:latest
+```
+
+**Key lesson:** Spec image tags must exactly match what was pushed. When building locally without a specific `IMAGE_TAG` (as CI uses `${{ github.sha }}`), always push `:latest` and reference `:latest` in the spec. Using version tags like `:v1` requires a deliberate tag-and-push step.
+
+---
+
+## Issue 33 — `KeyError: 'SNOWFLAKE_USER'` in analytics Streamlit app running in SPCS
+
+**Symptom:** `PAYMENT_ANALYTICS` service reached `READY` status and the readiness probe passed, but every page load crashed immediately:
+```
+KeyError: 'SNOWFLAKE_USER'
+File "/app/streamlit_app.py", line 32, in _connect
+    user=os.environ["SNOWFLAKE_USER"],
+```
+
+**Root cause:** `curated_analytics/streamlit_app.py` used `os.environ["KEY"]` (hard-fail) for both `SNOWFLAKE_USER` and `SNOWFLAKE_ACCOUNT`. Neither is injected by SPCS. In SPCS, authentication is done via an OAuth token injected at `/snowflake/session/token` — no username or account string is required. The container had no `SNOWFLAKE_USER` env var, causing an immediate `KeyError` before any connection attempt.
+
+This was written before the ops dashboard's `snowflake_client.py` pattern was established, and the SPCS auth model was not carried forward to the new app.
+
+**Fix:** Rewrote `_connect()` in `curated_analytics/streamlit_app.py` to match the ops dashboard pattern (`app/backend/snowflake_client.py`):
+
+```python
+_SPCS_TOKEN_PATH = "/snowflake/session/token"
+
+def _connect() -> snowflake.connector.SnowflakeConnection:
+    params = {k: v for k, v in _BASE_PARAMS.items() if v != ""}
+    host = os.getenv("SNOWFLAKE_HOST", "")
+    if host:
+        params["host"] = host
+
+    # 1. SPCS OAuth token — no user/password needed
+    try:
+        from pathlib import Path
+        token = Path(_SPCS_TOKEN_PATH).read_text().strip()
+        return snowflake.connector.connect(**params, token=token, authenticator="oauth")
+    except FileNotFoundError:
+        pass
+
+    # 2. Key-pair (local dev)
+    private_key = _load_private_key()
+    user = os.getenv("SNOWFLAKE_USER", "")
+    if private_key:
+        return snowflake.connector.connect(**params, user=user, private_key=private_key)
+
+    # 3. Password (last resort)
+    return snowflake.connector.connect(
+        **params, user=user, password=os.getenv("SNOWFLAKE_PASSWORD", "")
+    )
+```
+
+All `os.environ[]` hard-requires replaced with `os.getenv(..., "")` so the container degrades gracefully rather than crashing on missing env vars.
+
+**Key lesson:** Every Snowflake connection in an SPCS container must follow the token-first pattern. Never use `os.environ["SNOWFLAKE_USER"]` in SPCS code — `SNOWFLAKE_USER` is never injected by the runtime. The token at `/snowflake/session/token` is always present and requires no username.
+
+---
+
 ## Issue 29 — `make app-deploy` used wrong CLI command (`snow streamlit deploy` for SPCS service)
 
 **Symptom:** `make app-deploy` → `snow streamlit deploy --project spcs/` failed:
@@ -1026,3 +1099,135 @@ env | grep SNOWFLAKE_CONNECTIONS_BUSINESS_CRITICAL
 ```
 
 **Key lesson:** Cortex Code session tokens supersede `connections.toml` key-pair config. When tokens expire mid-session, always unset them before invoking `snow` CLI commands.
+
+---
+
+## Issue 32 — Kafka connector version bump rc8 → rc9
+
+**Symptom:** New RC release available at Maven Central. Planned upgrade, no failure.
+
+**Fix:** Updated `kafka-connect/Dockerfile` curl URL:
+
+```dockerfile
+# Before
+curl -sLO https://repo1.maven.org/maven2/com/snowflake/snowflake-kafka-connector/4.0.0-rc8/snowflake-kafka-connector-4.0.0-rc8.jar
+
+# After
+curl -sLO https://repo1.maven.org/maven2/com/snowflake/snowflake-kafka-connector/4.0.0-rc9/snowflake-kafka-connector-4.0.0-rc9.jar
+```
+
+Then rebuild:
+```bash
+docker compose build kafka-connect
+```
+
+---
+
+## Issue 33 — Docker build failed "No space left on device" after rc9 version bump
+
+**Symptom:** `docker compose build kafka-connect` failed immediately with:
+```
+mkdir: cannot create directory '...snowflakeinc-snowflake-kafka-connector': No space left on device
+```
+
+**Root cause:** Docker's internal VM disk was full. `docker system df` revealed:
+- 37.9 GB stale build cache (16.3 GB reclaimable)
+- 54 GB images (48 GB reclaimable from stopped containers)
+- 5.7 GB container data (5.7 GB reclaimable)
+
+**Fix:** Ran full cleanup (including volumes):
+```bash
+docker system prune --volumes
+```
+
+Targeted alternative (safer — keeps active images/containers, frees ~16 GB):
+```bash
+docker builder prune -f
+```
+
+**Warning:** `docker system prune --volumes` removes ALL stopped containers and their volumes. This caused follow-on Issues 34–36. Prefer `docker builder prune -f` unless a full reset is intended.
+
+---
+
+## Issue 34 — `payments-kafka` broker not running after `docker system prune --volumes`
+
+**Symptom:** `kafka-connect` logs flooded with:
+```
+java.net.UnknownHostException: kafka
+```
+`docker compose ps` showed only `payments-kafka-connect` and `payments-generator` — no `payments-kafka`.
+
+**Root cause:** `docker system prune --volumes` removes all stopped containers. The `payments-kafka` container was stopped (not running at the time of the prune) and was deleted. `kafka-connect` was still up but the broker it needed was gone, so the hostname `kafka` no longer resolved on the Docker network.
+
+**Fix:**
+```bash
+docker compose up -d kafka
+```
+
+After startup, `kafka-connect` automatically reconnected and the consumer group `snowflake-connector-group` rebalanced within ~5 seconds.
+
+---
+
+## Issue 35 — kafka-connect crash on restart: internal topics created with wrong `cleanup.policy`
+
+**Symptom:** After restarting `kafka-connect` (to re-initialise against the fresh broker), the container exited immediately with:
+```
+ERROR [Worker clientId=connect-1] Uncaught exception in herder work thread, exiting:
+  at org.apache.kafka.connect.util.TopicAdmin.verifyTopicCleanupPolicyOnlyCompact
+  at org.apache.kafka.connect.storage.KafkaTopicBasedBackingStore.lambda$topicInitializer$0
+```
+
+**Root cause:** While `kafka-connect` was still running against the freshly-started Kafka broker (Issue 34), Kafka auto-created the internal Connect bookkeeping topics (`_connect-configs`, `_connect-offsets`, `_connect-status`) with the default `cleanup.policy=delete`. Kafka Connect requires these topics to have `cleanup.policy=compact`. When `kafka-connect` was restarted, it detected the wrong policy and refused to start.
+
+**Fix:** Delete all three internal topics so kafka-connect can recreate them with the correct compact policy:
+
+```bash
+docker exec payments-kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server kafka:29092 --delete --topic _connect-configs
+
+docker exec payments-kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server kafka:29092 --delete --topic _connect-offsets
+
+docker exec payments-kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server kafka:29092 --delete --topic _connect-status
+
+docker compose up -d kafka-connect
+```
+
+On next start, kafka-connect creates these topics itself with `cleanup.policy=compact`.
+
+**Prevention:** If using `docker system prune --volumes`, always restart `kafka-connect` before it reconnects to the fresh broker — or bring the full stack down and up together:
+```bash
+docker compose down && docker compose up -d
+```
+
+---
+
+## Issue 36 — Connector config lost after volume prune, requires re-registration
+
+**Symptom:** After kafka-connect restarted cleanly (Issue 35 resolved), the connector was gone:
+```bash
+curl http://localhost:8083/connectors
+# []
+
+curl http://localhost:8083/connectors/auth-events-sink-payments/status
+# {"error_code":404,"message":"No status found for connector auth-events-sink-payments"}
+```
+
+**Root cause:** Connector configuration is persisted in the `_connect-configs` Kafka topic. This topic was deleted in Issue 35 and its underlying data was also wiped by `docker system prune --volumes`. After a clean restart, kafka-connect starts with no connectors registered.
+
+**Fix:** Re-register the connector from the local config file:
+```bash
+curl -s -X POST http://localhost:8083/connectors \
+  -H "Content-Type: application/json" \
+  --data @kafka-connect/shared.json
+```
+
+Verify it came up RUNNING:
+```bash
+curl -s http://localhost:8083/connectors/auth-events-sink-payments/status | jq '.connector.state, .tasks[].state'
+# "RUNNING"
+# "RUNNING"
+```
+
+**Key lesson:** `kafka-connect/shared.json` is the source of truth for connector config. The copy in Kafka's `_connect-configs` topic is ephemeral and lost on any volume prune. Always keep the JSON file in version control and re-register after a full stack reset.
