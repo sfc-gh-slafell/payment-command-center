@@ -1,7 +1,7 @@
 spec:
   containers:
     - name: analytics
-      image: /PAYMENTS_DB/APP/DASHBOARD_REPO/payment-analytics:20260401-135000
+      image: /PAYMENTS_DB/APP/DASHBOARD_REPO/payment-analytics:20260401-135608
       env:
         SNOWFLAKE_WAREHOUSE: PAYMENTS_REFRESH_WH
         SNOWFLAKE_DATABASE: PAYMENTS_DB

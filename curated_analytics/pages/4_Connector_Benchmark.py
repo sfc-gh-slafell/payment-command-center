@@ -51,6 +51,8 @@ def load_v4_throughput(window_min: int) -> pd.DataFrame:
         # INGESTED_AT is a per-micro-partition timestamp set once when Snowpipe
         # Streaming flushes a batch — it is NOT a per-row ingest time, so it
         # cannot be used reliably for time-window filtering.
+        # Use SYSDATE() (TIMESTAMP_NTZ in UTC) for the threshold so that the
+        # NTZ vs NTZ comparison is timezone-agnostic regardless of session config.
         # Latency = EVENT_TS → INGESTED_AT measures batch-level ingest lag
         # (time from event generation to when its micro-partition was written).
         cur.execute(
@@ -60,7 +62,7 @@ def load_v4_throughput(window_min: int) -> pd.DataFrame:
                 COUNT(*)                                                              AS records_per_sec,
                 AVG(DATEDIFF('millisecond', EVENT_TS, INGESTED_AT))                  AS avg_latency_ms
             FROM PAYMENTS_DB.RAW.AUTH_EVENTS_RAW
-            WHERE EVENT_TS >= DATEADD('MINUTE', -{window_min}, CURRENT_TIMESTAMP())
+            WHERE EVENT_TS >= DATEADD('MINUTE', -{window_min}, SYSDATE())
             GROUP BY 1
             ORDER BY 1 ASC
             LIMIT 900
