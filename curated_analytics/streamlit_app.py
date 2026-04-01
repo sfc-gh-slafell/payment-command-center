@@ -112,7 +112,7 @@ real-time operational dashboard.
 
 st.divider()
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     st.subheader("Hourly Trends")
@@ -137,6 +137,14 @@ with col3:
         "SLA monitoring across time and geography."
     )
     st.page_link("pages/3_Latency_Patterns.py", label="Open Latency Patterns →")
+
+with col4:
+    st.subheader("Connector Benchmark")
+    st.markdown(
+        "Live throughput and ingest latency for V4 HP vs V3 Classic connectors. "
+        "Side-by-side records/sec and latency with auto-refresh."
+    )
+    st.page_link("pages/4_Connector_Benchmark.py", label="Open Connector Benchmark →")
 
 st.divider()
 st.caption(

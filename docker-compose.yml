@@ -56,6 +56,38 @@ services:
     depends_on:
       - kafka
 
+  kafka-connect-v3:
+    build:
+      context: kafka-connect-v3
+      dockerfile: Dockerfile
+    container_name: payments-kafka-connect-v3
+    ports:
+      - "8084:8083"
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: "kafka:29092"
+      CONNECT_REST_ADVERTISED_HOST_NAME: "kafka-connect-v3"
+      CONNECT_REST_PORT: 8083
+      # Separate consumer group from V4 HP connector cluster
+      CONNECT_GROUP_ID: "snowflake-connector-v3-group"
+      # Separate internal bookkeeping topics from V4 cluster
+      CONNECT_CONFIG_STORAGE_TOPIC: "_connect-v3-configs"
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_OFFSET_STORAGE_TOPIC: "_connect-v3-offsets"
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_STATUS_STORAGE_TOPIC: "_connect-v3-status"
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_KEY_CONVERTER: "org.apache.kafka.connect.storage.StringConverter"
+      CONNECT_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_PLUGIN_PATH: "/usr/share/java,/usr/share/confluent-hub-components"
+      SNOWFLAKE_URL: "${SNOWFLAKE_URL}"
+      SNOWFLAKE_USER: "${SNOWFLAKE_USER}"
+      SNOWFLAKE_PRIVATE_KEY: "${SNOWFLAKE_PRIVATE_KEY}"
+      CONNECT_CONFIG_PROVIDERS: "env"
+      CONNECT_CONFIG_PROVIDERS_ENV_CLASS: "org.apache.kafka.common.config.provider.EnvVarConfigProvider"
+    depends_on:
+      - kafka
+
   generator:
     build:
       context: generator

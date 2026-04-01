@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from config import TOPIC, DEFAULT_RATE, DEFAULT_ENV
+from config import TOPIC, V3_TOPIC, DEFAULT_RATE, DEFAULT_ENV
 from producer import create_producer, generate_event
 from scenarios import SCENARIOS, Baseline
 
@@ -44,6 +44,11 @@ async def producer_loop():
         event = state["scenario"].modify_event(event)
         producer.produce(
             topic=TOPIC,
+            key=event["merchant_id"],
+            value=json.dumps(event).encode("utf-8"),
+        )
+        producer.produce(
+            topic=V3_TOPIC,
             key=event["merchant_id"],
             value=json.dumps(event).encode("utf-8"),
         )

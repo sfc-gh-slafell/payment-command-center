@@ -17,6 +17,24 @@
         "compression.type": "zstd for end-to-end compression (producer → broker → HP connector → Snowflake)",
         "min.insync.replicas": "2 ensures durability guarantee when producer uses acks=all"
       }
+    },
+    {
+      "name": "payments.auth.v3",
+      "partitions": 24,
+      "replication_factor": 3,
+      "config": {
+        "retention.ms": "259200000",
+        "cleanup.policy": "delete",
+        "compression.type": "zstd",
+        "min.insync.replicas": "2"
+      },
+      "rationale": {
+        "partitions": "24 partitions match payments.auth for apples-to-apples throughput comparison with V3 connector",
+        "replication_factor": "3 for HA in production; use 1 for local development",
+        "retention.ms": "72-hour retention matches payments.auth for consistent replay window",
+        "compression.type": "zstd end-to-end compression",
+        "min.insync.replicas": "2 ensures durability guarantee when producer uses acks=all"
+      }
     }
   ],
   "environments": {
