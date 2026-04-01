@@ -13,3 +13,16 @@ entities:
     spec_file: service_spec.yaml
     stage: PAYMENTS_DB.APP.SPECS
     comment: "Payment Command Center dashboard service"
+
+  payment_analytics:
+    type: service
+    identifier:
+      database: PAYMENTS_DB
+      schema: APP
+      name: PAYMENT_ANALYTICS
+    compute_pool: PAYMENTS_DASHBOARD_POOL
+    artifacts:
+      - ./analytics_service_spec.yaml
+    spec_file: analytics_service_spec.yaml
+    stage: PAYMENTS_DB.APP.SPECS
+    comment: "Payment Analytics curated-path BI dashboard"
