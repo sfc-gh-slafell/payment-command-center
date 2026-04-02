@@ -46,7 +46,11 @@ export default function TimeSeriesChart({ filters }: Props) {
       <ResponsiveContainer width="100%" height={280}>
         <ComposedChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-          <XAxis dataKey="minute" tick={{ fontSize: 11, fill: '#94a3b8' }} />
+          <XAxis
+              dataKey="minute"
+              interval={Math.max(0, Math.floor(chartData.length / 6))}
+              tick={{ fontSize: 11, fill: '#94a3b8' }}
+            />
           <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#94a3b8' }} />
           <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 11, fill: '#94a3b8' }} />
           <Tooltip

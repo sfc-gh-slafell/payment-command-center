@@ -1234,6 +1234,248 @@ curl -s http://localhost:8083/connectors/auth-events-sink-payments/status | jq '
 
 ---
 
+## Issue 37 — V4 HP dashboard shows 0 data: `CURRENT_TIMESTAMP()` in pipe stores PDT, SPCS session compares in UTC
+
+**Symptom:** `4_Connector_Benchmark.py` V4 panel loads without error but shows 0 records and 0 latency. Connector is RUNNING, rows are landing in `AUTH_EVENTS_RAW`. Querying the table directly from a PDT Snowsight session returns data normally.
+
+**Root cause:** The original pipe `COPY INTO` used `CURRENT_TIMESTAMP()` for `INGESTED_AT`:
+
+```sql
+INGESTED_AT ... DEFAULT CURRENT_TIMESTAMP()
+```
+
+`CURRENT_TIMESTAMP()` returns `TIMESTAMP_LTZ`. In the `PAYMENTS_ADMIN_ROLE` session that created the pipe (PDT, UTC-7), timestamps were stored as `09:49:45 -07:00` (equivalent to `16:49:45 UTC`). The dashboard filter was:
+
+```sql
+WHERE INGESTED_AT >= DATEADD('MINUTE', -5, CURRENT_TIMESTAMP())
+```
+
+The Streamlit app runs in SPCS, whose container sessions default to **UTC**. `CURRENT_TIMESTAMP()` from SPCS = `17:xx UTC`. The threshold was `~17:07 UTC`. All stored `INGESTED_AT` values were `09:xx PDT` = `16:xx UTC` — all in the past relative to the UTC threshold. Filter returned 0 rows.
+
+The same query from a PDT Snowsight session worked because `CURRENT_TIMESTAMP()` = `10:xx PDT`, threshold = `~10:02 PDT`, and stored values `09:49 PDT` were within range.
+
+**Fix:** Migration `V1.13.0__fix_ingest_pipe_utc_timestamp.sql` recreated the pipe using:
+```sql
+CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ
+```
+This stores timestamps as UTC regardless of session timezone. See Issue 38 for the side effect this caused, and Issue 39 for the `::TIMESTAMP_NTZ` cast requirement.
+
+**Key lesson:** Never use `CURRENT_TIMESTAMP()` (LTZ) for timestamp columns that will be compared across sessions with different timezones. Use `SYSDATE()` or `CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ`. SPCS container sessions are always UTC; developer sessions are often local timezone (PDT, EST, etc.). The same SQL produces different results in each context.
+
+---
+
+## Issue 38 — `CREATE OR REPLACE PIPE` in V1.13.0 triggers channel cleanup loop (0 rows land)
+
+**Symptom:** After V1.13.0 was applied (which ran `CREATE OR REPLACE PIPE`), the V4 connector appeared healthy (`RUNNING`, Task 0: `RUNNING`) but the `AUTH_EVENTS_RAW` table stopped receiving new rows entirely. Connector logs showed a repeating 60-second cycle:
+
+```
+Task 0 now using pipe AUTH_EVENTS_RAW
+Initialized streaming channel: AUTH_EVENTS_SINK_PAYMENTS_812203640_payments.auth_0
+Fetched snowflake committed offset: 0
+Cleaning up channel entry from cache: AUTH_EVENTS_SINK_PAYMENTS_812203640_payments.auth_0
+[60s]
+Task 0 now using pipe AUTH_EVENTS_RAW    ← repeats indefinitely
+```
+
+No errors. No `FAILED` state. Zero new rows in table.
+
+**Root cause:** `CREATE OR REPLACE PIPE` is a drop-and-recreate operation. It assigns a new internal pipe ID to the object. Snowpipe Streaming channels are bound to the **pipe's internal ID**, not its name. After recreation:
+- The connector re-registers the channel under the same name.
+- The Snowflake ingest server resolves that channel name to the old (now-deleted) pipe ID's server-side state.
+- The channel appears to initialize but the flush path is broken — data is buffered but never written.
+- After 60 seconds the SDK detects the stale channel and evicts it from cache. Cycle repeats.
+
+Restarting the connector, deleting and recreating the connector config, and changing the connector name all failed — they produced a different channel name but the server-side binding remained broken.
+
+**The only fix:** Drop and recreate the **table**. Dropping the table clears all server-side Snowpipe Streaming state (channel bindings, offset tracking) associated with it. This was applied via migration `V1.14.0__reset_raw_table_utc_pipe.sql`:
+
+```sql
+DROP TABLE IF EXISTS PAYMENTS_DB.RAW.AUTH_EVENTS_RAW;
+-- followed by full CREATE TABLE + CREATE PIPE + all grants
+```
+
+After the table was dropped and the connector was restarted, fresh channels were created with correct bindings and rows started landing immediately.
+
+**Key lesson:** Never run `CREATE OR REPLACE PIPE` on a live V4 HP connector without also dropping and recreating the table. The pipe internal ID invalidates all server-side channel state and there is no recovery short of a table drop. Any migration that modifies the pipe definition must be treated as a full table reset.
+
+---
+
+## Issue 39 — `CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())` returns `TIMESTAMP_LTZ`, not `TIMESTAMP_NTZ`
+
+**Symptom:** V1.13.0 used `CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())` for `INGESTED_AT` as a fix for the PDT storage issue (Issue 37). A diagnostic query showed the stored values displayed correctly as `17:49:45 +0000`, but the type was still `TIMESTAMP_LTZ` — not `TIMESTAMP_NTZ` as intended.
+
+**Root cause:** The 2-argument form of `CONVERT_TIMEZONE(target_tz, value)` converts the timezone of the value but **preserves the input type**. `CURRENT_TIMESTAMP()` is `TIMESTAMP_LTZ`. The output is also `TIMESTAMP_LTZ`, displayed as `+0000` to indicate UTC offset — but the Snowflake type system still treats it as LTZ.
+
+Consequences:
+- Storing into a `TIMESTAMP_NTZ` column: value stored correctly (implicit NTZ cast strips timezone info).
+- Using in a comparison: `WHERE INGESTED_AT >= CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())` still triggers LTZ-vs-NTZ implicit conversion, which is session-timezone-dependent.
+
+**Confirmed by:**
+```sql
+SELECT
+    TYPEOF(CURRENT_TIMESTAMP()),                              -- TIMESTAMP_LTZ
+    TYPEOF(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())),    -- TIMESTAMP_LTZ
+    TYPEOF(SYSDATE()),                                        -- TIMESTAMP_NTZ
+    TYPEOF(CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ);  -- TIMESTAMP_NTZ
+```
+
+**Fix:** Always cast to `::TIMESTAMP_NTZ` explicitly, or use `SYSDATE()` which is natively `TIMESTAMP_NTZ` in UTC:
+
+```sql
+-- In pipe COPY INTO
+CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ
+
+-- In WHERE clauses
+WHERE EVENT_TS >= DATEADD('MINUTE', -5, SYSDATE())
+```
+
+V1.14.0 applied the `::TIMESTAMP_NTZ` cast in the pipe definition, and `4_Connector_Benchmark.py` was updated to use `SYSDATE()` in all V4 HP filters.
+
+---
+
+## Issue 40 — `ERR_PIPE_DOES_NOT_EXIST_OR_NOT_AUTHORIZED` after V1.13.0 pipe recreation
+
+**Symptom:** After V1.13.0 recreated the pipe with `CREATE OR REPLACE PIPE`, the connector immediately began failing with:
+```
+net.snowflake.ingest.utils.SFException: ERR_PIPE_DOES_NOT_EXIST_OR_NOT_AUTHORIZED
+```
+The pipe existed and was visible to `ACCOUNTADMIN`. The connector role `PAYMENTS_INGEST_ROLE` had previously had `MONITOR` and `OPERATE` granted.
+
+**Root cause:** `CREATE OR REPLACE PIPE` drops and recreates the pipe object. All grants on the old object are lost. The initial V1.13.0 migration only re-granted `MONITOR` (from the original V1.7.0 pattern), not `OPERATE`. Without `OPERATE`, the Snowpipe Streaming API returns `NOT_AUTHORIZED` even though `MONITOR` lets you read pipe metadata.
+
+**Fix — immediate:** Ran `GRANT OPERATE ON PIPE ... TO ROLE PAYMENTS_INGEST_ROLE` directly in Snowsight to unblock the connector while the migration was corrected.
+
+**Fix — migration:** V1.13.0 was edited to include both grants:
+```sql
+GRANT MONITOR ON PIPE PAYMENTS_DB.RAW.AUTH_EVENTS_RAW TO ROLE PAYMENTS_INGEST_ROLE;
+GRANT OPERATE ON PIPE PAYMENTS_DB.RAW.AUTH_EVENTS_RAW TO ROLE PAYMENTS_INGEST_ROLE;
+```
+
+This caused a schemachange checksum drift warning (see Issue 43). V1.14.0 includes both grants from the start.
+
+**Key lesson:** Any migration containing `CREATE OR REPLACE PIPE` must re-grant **both** `MONITOR` and `OPERATE` to the connector role in the same migration. `MONITOR` alone is not sufficient — it only grants metadata read access. `OPERATE` is required for Snowpipe Streaming API ingestion. See also KAFKA_V3_VS_V4_HP.md Gotcha 5.
+
+---
+
+## Issue 41 — `PAYMENTS_SERVE_ROLE does not exist` in V1.14.0 first attempt
+
+**Symptom:** First attempt at running V1.14.0 failed in schemachange with:
+```
+SQL compilation error: Role 'PAYMENTS_SERVE_ROLE' does not exist.
+```
+
+**Root cause:** V1.14.0 was written using `PAYMENTS_SERVE_ROLE` to grant `SELECT` on the recreated `AUTH_EVENTS_RAW` table. This role does not exist in the account. The project uses `PAYMENTS_APP_ROLE` (dashboard/SPCS service) and `PAYMENTS_OPS_ROLE` (ops/monitoring), established in V1.1.0.
+
+**Fix:** Replaced `PAYMENTS_SERVE_ROLE` with `PAYMENTS_APP_ROLE` and `PAYMENTS_OPS_ROLE` to match the grant pattern from V1.1.0:
+
+```sql
+-- Correct
+GRANT SELECT ON TABLE PAYMENTS_DB.RAW.AUTH_EVENTS_RAW TO ROLE PAYMENTS_APP_ROLE;
+GRANT SELECT ON TABLE PAYMENTS_DB.RAW.AUTH_EVENTS_RAW TO ROLE PAYMENTS_OPS_ROLE;
+
+-- Wrong (role does not exist)
+-- GRANT SELECT ON TABLE PAYMENTS_DB.RAW.AUTH_EVENTS_RAW TO ROLE PAYMENTS_SERVE_ROLE;
+```
+
+**Diagnosis method:** `SHOW ROLES LIKE 'PAYMENTS%'` lists all PAYMENTS_* roles. Reference V1.1.0 for the canonical grant pattern whenever adding new grants to RAW tables.
+
+---
+
+## Issue 42 — `INGESTED_AT` per-micro-partition timestamp causes `-500,000 ms` latency in dashboard
+
+**Symptom:** The V4 HP latency chart on the Connector Benchmark page showed `AVG_LATENCY_MS ≈ −500,000` (negative 500 seconds). The query was:
+
+```sql
+AVG(DATEDIFF('millisecond', EVENT_TS, INGESTED_AT))
+```
+
+**Root cause:** `INGESTED_AT` in HP Snowpipe Streaming is set **once per micro-partition open**, not once per row. A partition opened at `17:49:45` accumulated events for ~12 minutes. Events with `EVENT_TS = 17:58` were stored in that partition with `INGESTED_AT = 17:49:45`.
+
+`DATEDIFF('millisecond', 17:58, 17:49:45) = −8.5 minutes = −510,000 ms`.
+
+The average across all events in the partition was large and negative. This is not a bug — it accurately reflects the math. The math is just the wrong metric for HP mode.
+
+**Root cause (deeper):** `INGESTED_AT` as a per-row latency proxy only works when `INGESTED_AT` is assigned at row-insert time. In HP mode, the default column expression is evaluated at partition-open time. The concept of "per-row ingest time" does not exist in HP Snowpipe Streaming.
+
+**Fix:** Replaced `AVG_LATENCY_MS` in `load_v4_throughput()` with a separate `load_v4_pipeline_lag()` query returning pipeline freshness:
+
+```python
+# Removed from load_v4_throughput SELECT:
+# AVG(DATEDIFF('millisecond', EVENT_TS, INGESTED_AT)) AS avg_latency_ms
+
+# New scalar query:
+SELECT DATEDIFF('millisecond', MAX(EVENT_TS), SYSDATE())
+FROM PAYMENTS_DB.RAW.AUTH_EVENTS_RAW
+```
+
+Dashboard now shows "Newest event visible in Snowflake: X.X s ago" instead of a broken negative latency chart. New SPCS image: `20260401-140749`.
+
+**Key lesson:** For HP Snowpipe Streaming, pipeline freshness (`MAX(EVENT_TS)` → now) is the only reliable end-to-end latency proxy. `INGESTED_AT − EVENT_TS` is misleading and will show negative values for any events that accumulated after the partition opened.
+
+---
+
+## Issue 43 — schemachange checksum drift warning after editing V1.13.0 post-application
+
+**Symptom:** After V1.13.0 was applied and then edited (to add the missing `OPERATE` grant — see Issue 40), the next `schemachange deploy` run logged:
+
+```
+WARNING - Checksum change detected for script V1.13.0__fix_ingest_pipe_utc_timestamp.sql.
+Script has been applied previously with checksum X but current checksum is Y.
+```
+
+schemachange continued and applied V1.14.0 normally. No data was corrupted.
+
+**Root cause:** schemachange records a SHA256 checksum of each migration script at apply time in `SCHEMACHANGE_HISTORY`. If the script file on disk is later modified, the checksum on the next run differs from the stored value. schemachange treats this as a warning (not an error by default) but logs it prominently.
+
+**Why this happened:** V1.13.0 was edited after apply to add `GRANT OPERATE ON PIPE ...`. This was necessary to unblock the connector immediately. V1.14.0 superseded V1.13.0 entirely (full table drop/recreate), making V1.13.0's changes moot.
+
+**The correct approach for future changes:**
+- Never edit a migration that has already been applied to any environment.
+- If an applied migration is missing a grant or has an error: create a new migration (V1.x.y) to apply the correction.
+- If a complete reset is needed (as here): create a new migration that drops and recreates the affected objects, making the previous migration irrelevant.
+
+**Impact:** The checksum mismatch is only a warning by default. In stricter schemachange configurations (`--error-on-checksum-mismatch`), it would fail the deployment. Do not rely on the warning-only behavior in production pipelines.
+
+---
+
+## Issue 44 — V3 and V4 show identical throughput on Connector Benchmark page
+
+**Symptom:** Dashboard `4_Connector_Benchmark.py` shows V3 Classic and V4 HP at the same records/sec. V4 should be significantly higher.
+
+**Root cause (three independent bottlenecks):**
+
+**Bottleneck A — Same input rate into both topics.**
+`producer_loop()` in `generator/main.py` publishes the same event to both `payments.auth` (V4) and `payments.auth.v3` (V3) in every loop iteration. Both topics receive identical events at an identical rate. Both connectors are supply-limited to the same ceiling; they cannot show different throughput unless one falls behind its input rate.
+
+This design is correct — apples-to-apples comparison requires the same data. The contrast only becomes visible when the input rate exceeds V3 Classic's processing capacity, forcing V3 to accumulate Kafka consumer lag while V4 HP keeps up.
+
+**Bottleneck B — Input rate was too low to saturate V3.**
+`GENERATOR_RATE: "500"` produced ~315 actual events/sec (37% undershoot — see Bottleneck C). V3 Classic (`SnowflakeSinkConnector` with `SNOWPIPE_STREAMING`) can sustain roughly 1,000–2,000 rps per task before accumulating lag. At 315 rps, both connectors idle-coast below their capacity; no lag builds and throughput looks identical.
+
+**Bottleneck C — `asyncio.sleep(1/rate)` per-event sleep undershoots at high rates.**
+The original `producer_loop()` called `await asyncio.sleep(1.0 / rate)` after each event. Python's asyncio sleep has a minimum resolution of ~1 ms on most systems. At 500 rps the target sleep is 2 ms, meaning sleep timer jitter of ±1 ms represents ±50% error per event — yielding ~315 actual rps instead of 500 (37% undershoot). At 3,000 rps the target would be 0.33 ms, which is completely unreliable.
+
+**Bottleneck D — V4 `tasks.max: 1` suppresses its parallelism advantage.**
+The SPEC (`section 9`) explicitly recommends `tasks.max` close to 24 (the partition count) for V4 HP. With `tasks.max: 1`, a single Kafka Connect task consumes all 24 partitions and writes to Snowflake serially, running at ~1/24 of V4 HP's designed capacity. V3 Classic at `tasks.max: 1` is correct; its threading model does not scale horizontally the same way.
+
+**Fix applied:**
+
+1. `generator/main.py` — replaced per-event sleep with a batch-tick pattern: produce `rate // 10` events per 100 ms tick. `asyncio.sleep(0.1)` is reliable; per-event sub-millisecond sleep is not. Actual throughput is now within ~5% of configured rate at any target.
+
+2. `docker-compose.yml` — raised `GENERATOR_RATE` from `500` to `3000`. 3,000 rps is ~1.5–3× V3 Classic's per-task ceiling, causing V3 to accumulate lag while V4 HP handles the load.
+
+3. `kafka-connect/shared.json` — raised V4 `tasks.max` from `1` to `4`. Four tasks across 24 partitions is realistic for a local Docker environment and demonstrates V4 HP parallelism. V3 `tasks.max` left at `1`.
+
+**Expected result after restart:**
+- Generator `/status` reports ~3,000 events/sec.
+- V4 HP: ~3,000 rec/s in the dashboard, pipeline lag ≤10 s.
+- V3 Classic: visibly lower rec/s as consumer lag accumulates; pipeline lag grows.
+- Kafka consumer group lag check: `docker exec payments-kafka kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group snowflake-connector-v3-group` should show growing lag on `payments.auth.v3` partitions.
+
+**Key lesson:** A throughput benchmark between two connectors is only meaningful when the input rate exceeds the slower connector's capacity. At sub-capacity rates both connectors show identical throughput because they process every message as fast as it arrives. Always verify the generator rate, connector task count, and actual Kafka consumer lag before concluding that two connectors perform equally.
+
+---
+
 ## Issue 34 — `invalid identifier 'RECORD_METADATA'` in V4 throughput query on Connector Benchmark page
 
 **Symptom:** `4_Connector_Benchmark.py` crashes immediately on page load:

@@ -284,6 +284,9 @@ curl -s http://localhost:8083/connector-plugins | jq '.[] | select(.class | cont
 10. **Connector config accepted but fails on start** — Missing Bouncy Castle dependencies only discovered at runtime (connector validation passes, but start fails). Always verify JARs are in plugin path.
 11. **ERR_PIPE_DOES_NOT_EXIST_OR_NOT_AUTHORIZED with v4.x HP connector** — Pipe exists but connector role lacks required privileges. HP connector v4.x requires `OPERATE` privilege on pipe (not just `MONITOR`) and `SELECT` on table (not just `INSERT`) for Snowpipe Streaming API access.
 12. **Multiple FAILED tasks with connector RUNNING** — `tasks.max` exceeds topic partition count. Each task processes specific partitions; excess tasks have no work and fail. Solution: Set `tasks.max` ≤ partition count, or increase topic partitions to match task count.
+13. **V4 HP startup WARNs that are expected but require action** — Two WARNs fire once at connector registration and are not errors, but one is actionable:
+    - `Config 'snowflake.enable.schematization' is not supported in KC v4. Schema evolution is now handled server-side via table property 'ENABLE_SCHEMA_EVOLUTION'.` — Informational only. Remove the key from your config to suppress it. If you need schema evolution on a pre-created table, run `ALTER TABLE ... SET ENABLE_SCHEMA_EVOLUTION = TRUE`.
+    - `CLIENT-SIDE VALIDATION DISABLED (High-Performance Mode). Running without client-side validation requires a configured SSv2 Error Table to prevent records from being silently dropped.` — **Actionable.** HP mode skips per-row schema/type validation for throughput. Malformed records are not rejected at the connector — they are silently dropped unless an SSv2 error table is configured. Configure an error table or accept that malformed records will be lost without a trace.
 
 ## Connector Troubleshooting
 
@@ -434,6 +437,147 @@ docker compose up -d
 ```
 
 **Key rule:** `kafka-connect/shared.json` is the authoritative connector config. The `_connect-configs` Kafka topic is a runtime cache — it does not survive a volume prune.
+
+---
+
+## Operational Remediation: Snowpipe Streaming Failure Modes
+
+This section covers failure modes encountered during sustained high-throughput ingestion (30k–50k+ rps) that require specific remediation — **not** generic connector restarts. These patterns apply to both V3 (`SnowflakeSinkConnector` with Snowpipe Streaming mode) and V4 HP (`SnowflakeStreamingSinkConnector`), since both use Snowpipe Streaming channels internally.
+
+### Issue 1: Stale Snowpipe Streaming Channel Offsets (Records Silently Skipped)
+
+**Trigger:** Kafka data is wiped (topic deletion + recreation, or `docker volume prune`) without also clearing Snowflake's Snowpipe Streaming channel state. When the topic is recreated, Kafka offsets start from 0, but Snowflake channels still hold the old committed offset (e.g., 120,441,204).
+
+**Symptom:** Connector shows `RUNNING`, tasks show `RUNNING`, but zero new rows land in Snowflake. Connector logs show:
+
+```
+Channel PAYMENTS_DB.RAW.AUTH_EVENTS_RAW_V3.PAYMENTS.AUTH.V3_0 -
+  skipping current record - expected offset 120441204 but received 92121199
+```
+
+All new records are skipped because their Kafka offsets are lower than the channel's committed offset.
+
+**Why restarts don't help:** The committed offset lives in Snowflake's channel metadata, not in Kafka or the Connect worker. Restarting the connector or the Connect container re-opens the same channel with the same stale offset.
+
+**Remediation options (in order of preference):**
+
+1. **Prevention (best):** Never wipe Kafka data independently. Use a coordinated reset that drops both Kafka topics and Snowflake target tables together. Example `make demo-reset` pattern:
+   ```bash
+   docker-compose down          # Stop all services including Connect
+   rm -rf ./kafka-data          # Wipe Kafka data
+   snow sql -q "DROP TABLE IF EXISTS PAYMENTS_DB.RAW.AUTH_EVENTS_RAW_V4"
+   snow sql -q "DROP TABLE IF EXISTS PAYMENTS_DB.RAW.AUTH_EVENTS_RAW_V3"
+   docker-compose up -d         # Restart everything fresh
+   # Re-register connectors (they auto-create tables with fresh channels)
+   ```
+
+2. **New table name:** Change the target table in connector config (e.g., `AUTH_EVENTS_RAW` → `AUTH_EVENTS_RAW_V2`). Channels are keyed on `{database}.{schema}.{table_name}`, so a new table name creates fresh channels with offset 0. Then delete and re-register the connector.
+
+3. **Drop table + delete/re-register connector:** Drop the Snowflake table, delete the connector via REST API, wait a few seconds, then re-register. The connector auto-creates the table with fresh channels. **Caveat:** This can trigger `ERR_PIPE_IN_INVALID_STATE` (see Issue 2 below) if time-travel metadata still references the old table.
+
+**Unconfirmed:** The property `snowflake.streaming.offset.reset.strategy` has been referenced in some community discussions as a way to reset channel offsets without table changes. As of V4 RC9 and V3 2.3.x, this property is **not confirmed to exist** in official Snowflake documentation or connector source. Do not rely on it without testing.
+
+**Channel name format:** `<CONNECTOR_NAME_UPPER>_<HASH>_<TOPIC>_<PARTITION>` — the hash is deterministic per connector name. Changing the connector name changes the hash and thus the channel name, but the underlying Snowpipe Streaming pipe is keyed on the **table**, not the channel name. So changing only the connector name is insufficient if the pipe state is the problem.
+
+### Issue 2: `ERR_PIPE_IN_INVALID_STATE` (HTTP 409) After Table Drop
+
+**Trigger:** A Snowflake target table with active Snowpipe Streaming channels is dropped and recreated with the same name. The internal streaming pipe (keyed on `{database}.{schema}.{table_name}`) retains metadata from the dropped table due to time-travel and fail-safe retention. The pipe references a table version that no longer matches, entering a permanently invalid state.
+
+**Symptom:** All tasks fail immediately after startup with:
+
+```
+ERR_PIPE_IN_INVALID_STATE (HTTP 409)
+```
+
+Connector shows `RUNNING` but all tasks show `FAILED`.
+
+**Why restarts don't help:** The pipe state is server-side in Snowflake, tied to the table name. Restarting connectors, changing connector names, or recreating Connect containers all open channels against the same poisoned pipe.
+
+**What does NOT fix it:**
+- Dropping and recreating the table (pipe metadata persists through time-travel)
+- Changing connector name (pipe is per-table, not per-connector)
+- Restarting the Kafka Connect container
+- Restarting individual failed tasks
+
+**Remediation options:**
+
+1. **New table name (immediate fix):** Change `snowflake.topic2table.map` in connector config to point to a new table name (e.g., `AUTH_EVENTS_RAW` → `AUTH_EVENTS_RAW_V4`). Delete and re-register the connector. The connector auto-creates the new table with a fresh pipe.
+
+2. **Wait for time-travel expiry:** If you must keep the original table name, wait for the time-travel retention period (default 1 day, up to 90 days for Enterprise+) plus the 7-day fail-safe period. After that, the pipe metadata is fully purged and the table name can be safely reused.
+
+3. **`ALTER TABLE ... RENAME`:** Rename the existing table to a different name, then create a new table with the original name. This may or may not clear the pipe state depending on whether the pipe references the table by name or by internal ID. **Test before relying on this approach.**
+
+**Prevention:** If you need to reset a table, prefer `TRUNCATE TABLE` over `DROP TABLE` — truncation preserves the table identity and pipe binding. For a full reset, always use a new table name or coordinate with the `demo-reset` approach that changes table names in connector configs.
+
+### Issue 3: `MemoryThresholdExceeded` (HTTP 429) — Snowflake Ingest Node Memory Pressure
+
+**Trigger:** The Snowflake ingest node (server-side) is under memory pressure, typically at 93%+ system memory utilization. This happens during sustained high-throughput ingestion, especially with multiple concurrent connectors or large batch sizes.
+
+**Symptom:** Tasks fail with retry exhaustion after ~20 attempts. Connector logs show:
+
+```
+MemoryThresholdExceeded - System memory is at 93.XX% utilization.
+Please reduce your client request rate. (HTTP 429)
+```
+
+Tasks transition from `RUNNING` → `FAILED` one by one as each exhausts its retry budget.
+
+**Why restarts don't help (and make things worse):** This is a server-side throttle signal, not a client-side bug. Restarting the connector causes all tasks to reconnect simultaneously, creating a burst of new `appendRow` calls that further increases memory pressure. The correct response is to **reduce load**, not restart.
+
+**Remediation:**
+
+1. **Reduce ingestion rate at the source:** Lower the event generator rate. The 429 is Snowflake saying "slow down." Honor the backoff.
+
+2. **Let built-in retry handle transient spikes:** Both V3 and V4 connectors have built-in retry with exponential backoff for 429 responses (~20 attempts). If the memory pressure is transient (e.g., concurrent large queries finishing), the connector recovers automatically. Only intervene if tasks actually reach `FAILED` state.
+
+3. **After tasks fail, fix the rate first, then restart:** Once you've reduced the source rate:
+   ```bash
+   # For V4 HP (4 tasks) — restart individual tasks
+   curl -X POST http://localhost:8083/connectors/auth-events-sink-v4/tasks/0/restart
+   curl -X POST http://localhost:8083/connectors/auth-events-sink-v4/tasks/1/restart
+   # ... etc.
+
+   # For V3 — delete and re-register (single task, less risk of channel conflicts)
+   curl -X DELETE http://localhost:8084/connectors/auth-events-sink-v3
+   sleep 2
+   curl -X POST -H "Content-Type: application/json" \
+     --data @kafka-connect-v3/shared.json \
+     http://localhost:8084/connectors
+   ```
+
+4. **Monitor before scaling up:** After recovery, gradually increase the rate while monitoring:
+   ```sql
+   -- Check ingestion lag (V4 structured table)
+   SELECT DATEDIFF('second', MAX(EVENT_TS), SYSDATE()) AS lag_seconds
+   FROM PAYMENTS_DB.RAW.AUTH_EVENTS_RAW_V4;
+
+   -- Check row counts over time
+   SELECT COUNT(*) FROM PAYMENTS_DB.RAW.AUTH_EVENTS_RAW_V4;
+   ```
+
+**Key principle:** 429 is a rate signal, not an error to fix. The connector's retry logic is designed to handle it. Only escalate to human intervention when tasks reach `FAILED` state after all retries are exhausted.
+
+### Additional Operational Notes
+
+**Task restart vs. connector delete/re-register:**
+- **Individual task restart** (`POST /connectors/{name}/tasks/{id}/restart`) is lightweight but can cause `Channel has already been opened on the client` errors during partition rebalancing, especially with multiple tasks.
+- **Full connector delete + re-register** (`DELETE /connectors/{name}` then `POST /connectors`) is heavier but gives clean partition assignments. Preferred for V3 (1 task) or when multiple V4 tasks have failed.
+
+**Channel conflict error:**
+```
+Channel AUTH_EVENTS_SINK_V4_608480759_payments.auth_0 has already been opened on the client
+```
+This occurs when a task restart races with partition rebalancing. Fix: delete the entire connector and re-register.
+
+### External Sources and Validation
+
+- **Snowflake Kafka Connector documentation:** [Snowflake Kafka Connector Overview](https://docs.snowflake.com/en/user-guide/kafka-connector-overview) — covers V3 architecture, Snowpipe Streaming mode, and configuration reference.
+- **Snowpipe Streaming channel semantics:** Channel offset tracking and exactly-once delivery are documented in [Snowpipe Streaming Overview](https://docs.snowflake.com/en/user-guide/data-load-snowpipe-streaming-overview).
+- **`ERR_PIPE_IN_INVALID_STATE` behavior:** Observed empirically in this project. The relationship between table drops, time-travel metadata, and pipe state is not explicitly documented but is consistent with Snowflake's time-travel architecture where dropped objects retain metadata for the retention period.
+- **`MemoryThresholdExceeded` (HTTP 429):** Standard HTTP rate-limiting semantics. Snowflake's ingest node returns 429 when system memory exceeds thresholds. The connector's retry-with-backoff behavior is the expected client response.
+- **`snowflake.streaming.offset.reset.strategy`:** **NOT VALIDATED.** This property name appears in some community threads but is not found in official Snowflake connector documentation or the V4 RC9 configuration reference as of January 2025. Do not use without independent verification against the connector source code or official docs.
+- **Channel name format** (`<CONNECTOR_NAME>_<HASH>_<TOPIC>_<PARTITION>`): Observed from connector logs. The hash is deterministic per connector name.
+- **Pipe keyed on table name, not connector name:** Confirmed empirically — changing connector name (and thus channel hash) did not resolve `ERR_PIPE_IN_INVALID_STATE`. Only changing the table name resolved it.
 
 ---
 

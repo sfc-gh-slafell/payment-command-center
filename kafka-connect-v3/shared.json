@@ -25,6 +25,10 @@
 
     "errors.tolerance": "all",
     "errors.log.enable": "true",
-    "errors.log.include.messages": "true"
+    "errors.log.include.messages": "true",
+
+    "buffer.flush.time": "10",
+    "buffer.count.records": "10000",
+    "buffer.size.bytes": "5242880"
   }
 }

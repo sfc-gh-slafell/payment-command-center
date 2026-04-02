@@ -19,6 +19,71 @@ Reference document for issue #59: adding a V3 connector path alongside the exist
 
 ---
 
+## V4 HP Advantages Over V3 Streaming Classic
+
+A concise reference for the six architectural reasons to choose V4 HP over V3 Streaming Classic.
+These hold regardless of current throughput — they are structural, not load-dependent.
+
+| Advantage | V4 HP | V3 Streaming Classic |
+|---|---|---|
+| **Throughput ceiling** | Up to 10 GB/s per table | ~2,000 rps per task (Java SDK per-row limit) |
+| **Billing model** | Flat rate per uncompressed GB ingested | Per client connection + serverless compute credits |
+| **Buffer tuning** | None — managed internally | `buffer.flush.time`, `buffer.count.records`, `buffer.size.bytes`, `snowflake.streaming.max.client.lag` |
+| **Client runtime** | Rust — low CPU/memory overhead | Java Ingest SDK — JVM heap pressure at high throughput |
+| **Pipeline lag target** | 5–10 s (stable under any load) | Seconds–minutes (grows beyond per-task ceiling) |
+| **Deprecation status** | Public Preview — future standard | **Planned deprecation mid-2026, 18-month sunset** |
+
+### Throughput Ceiling
+
+V4 HP is designed for **10 GB/s per table** throughput. V3 Streaming Classic is limited by the Java Ingest SDK's per-row overhead: each row requires an individual Ingest API call, and the SDK's threading model caps effective throughput at roughly **1,000–2,000 rps per task**. Once V3 exceeds this ceiling it accumulates Kafka consumer lag that grows unboundedly. V4 HP's micro-partition batching approach writes rows in bulk, making per-row overhead negligible at high rates.
+
+*Demo environment note:* In a single-node Docker environment, the Kafka broker becomes the bottleneck before either connector's ceiling is reached, so both show equal throughput at demo rates. V4 HP's ceiling advantage is a production-scale property.
+
+### Predictable Billing
+
+V4 HP billing: **flat rate per uncompressed GB ingested** — scales linearly with data volume, no compute credit spikes.
+
+V3 Streaming Classic billing: **per active client connection + serverless compute credits** — total cost varies with connection count, flush frequency, and re-connection events. Throughput spikes cause unpredictable credit consumption.
+
+### Zero Buffer Tuning
+
+V3 Streaming Classic exposes five tuning parameters that directly affect throughput and latency:
+
+```
+buffer.flush.time          (default 10s)
+buffer.count.records       (default 10000)
+buffer.size.bytes          (default 20 MB)
+snowflake.streaming.max.client.lag  (default 30s in v3.1.1+)
+enable.streaming.client.optimization
+```
+
+These parameters interact — reducing `buffer.flush.time` improves latency but increases billing; increasing `buffer.count.records` improves throughput but increases latency. Re-tuning is required as event size and throughput change.
+
+V4 HP exposes none of these parameters. Micro-partition flushing is managed internally by Snowflake's HP architecture. Operators configure only `tasks.max`.
+
+### Rust Client
+
+V3 Streaming Classic uses the Snowflake Java Ingest SDK — a JVM-based runtime that is subject to GC pauses, heap sizing, and class-loading overhead. At sustained high throughput, heap pressure becomes a tuning concern (`-Xmx`, GC policy).
+
+V4 HP uses a Rust-based streaming client. Rust's ownership model eliminates GC pauses, and the client's memory footprint is significantly lower than the JVM. This is observable in container CPU and memory utilization at high rps.
+
+### Stable Pipeline Lag Under Load
+
+V4 HP's 5–10 second end-to-end pipeline lag is a **design constant** of the HP architecture — it reflects the time to accumulate and flush a micro-partition, not a symptom of being under load. This lag is consistent from 100 rps to 10 GB/s.
+
+V3 Streaming Classic has lower per-row minimum latency at low throughput (~2–5 seconds when comfortably within its ceiling). But once throughput exceeds the per-task ceiling, Kafka consumer lag accumulates and pipeline freshness degrades unboundedly. V4 HP does not have a "ceiling" beyond which lag grows.
+
+### Deprecation Timeline
+
+V3 Snowpipe Streaming Classic is on a defined deprecation path:
+- **Mid-2026**: Formal Snowflake deprecation announcement
+- **18 months post-announcement**: End of support / service shutdown
+- **Action required now**: Evaluate migration timeline; track Snowflake release notes
+
+V4 HP is Snowflake's designated replacement. All future HP streaming investment goes into V4. Migration is **manual only** — there is no automated upgrade path from V3 to V4 (see [Migration from V3 to V4](#migration-from-v3-to-v4-what-does-not-work)).
+
+---
+
 ## The Three Modes — What "V3 vs V4" Actually Means
 
 The version numbering is connector-level but the underlying architecture matters more than the version number.
@@ -340,40 +405,218 @@ ORDER BY m.start_time DESC;
 
 The V4 HP table uses a user-defined pipe (Issue 22) that extracts `RECORD_METADATA` fields into
 individual named columns (`SOURCE_TOPIC`, `SOURCE_PARTITION`, `SOURCE_OFFSET`). There is **no
-`RECORD_METADATA` VARIANT column** in `AUTH_EVENTS_RAW`. Latency is measured as event generation
-time (`EVENT_TS`, from the payload) to Snowflake visibility (`INGESTED_AT`, set to
-`CURRENT_TIMESTAMP()` in the COPY INTO) — the true end-to-end latency from producer to query.
+`RECORD_METADATA` VARIANT column** in `AUTH_EVENTS_RAW`.
+
+**Critical caveats for V4 HP queries — see the Behavioral Gotchas section below:**
+
+- Filter and bucket on `EVENT_TS` (per-row UTC timestamp from the generator), **not** `INGESTED_AT`.
+  `INGESTED_AT` is set **once per micro-partition open** — using it in a time-window filter returns
+  0 rows once the open partition's age exceeds the window.
+- Use `SYSDATE()` (returns `TIMESTAMP_NTZ` in UTC natively) for time thresholds, **not**
+  `CURRENT_TIMESTAMP()` (returns `TIMESTAMP_LTZ`). Comparing LTZ against `TIMESTAMP_NTZ EVENT_TS`
+  causes implicit timezone conversion that produces incorrect results depending on session timezone.
+- `INGESTED_AT − EVENT_TS` is **not a meaningful per-row latency** for HP mode. Use pipeline
+  freshness (`DATEDIFF('second', MAX(EVENT_TS), SYSDATE())`) instead.
 
 ```sql
--- Records per second and avg end-to-end latency — V4 HP
+-- Records per second — V4 HP
+-- Bucket and filter on EVENT_TS (per-row UTC); use SYSDATE() for NTZ threshold
 SELECT
-    DATE_TRUNC('SECOND', INGESTED_AT)                                          AS second_bucket,
-    COUNT(*)                                                                    AS records_per_sec,
-    AVG(DATEDIFF('millisecond', EVENT_TS, INGESTED_AT))                        AS avg_ingest_latency_ms
+    DATE_TRUNC('SECOND', EVENT_TS)   AS second_bucket,
+    COUNT(*)                          AS records_per_sec
 FROM PAYMENTS_DB.RAW.AUTH_EVENTS_RAW
-WHERE INGESTED_AT >= DATEADD('MINUTE', -5, CURRENT_TIMESTAMP())
+WHERE EVENT_TS >= DATEADD('MINUTE', -5, SYSDATE())
 GROUP BY 1
 ORDER BY 1 DESC;
+
+-- Pipeline freshness (how stale is the newest visible event)
+SELECT DATEDIFF('second', MAX(EVENT_TS), SYSDATE()) AS pipeline_lag_sec
+FROM PAYMENTS_DB.RAW.AUTH_EVENTS_RAW;
 ```
 
 ### Measuring V3 throughput (once `AUTH_EVENTS_RAW_V3` is set up)
 
-V3 Snowpipe Streaming Classic also injects `SnowflakeConnectorPushTime` into `RECORD_METADATA`:
+V3 Snowpipe Streaming Classic injects `SnowflakeConnectorPushTime` and `CreateTime` into
+`RECORD_METADATA` as **Unix milliseconds** (BIGINT). Convert with `/ 1000` before `TO_TIMESTAMP`.
+The per-row latency is meaningful here because each row's metadata is written individually.
 
 ```sql
--- Records per second and avg latency — V3 Snowpipe Streaming Classic
--- Assumes RECORD_CONTENT/RECORD_METADATA VARIANT schema (V3 default)
+-- Records per second and per-row latency — V3 Snowpipe Streaming Classic
+-- RECORD_METADATA:CreateTime = Kafka producer timestamp (ms since epoch)
+-- RECORD_METADATA:SnowflakeConnectorPushTime = time row was pushed to Snowflake (ms since epoch)
 SELECT
-    DATE_TRUNC('SECOND', CURRENT_TIMESTAMP())                                  AS second_bucket,
-    COUNT(*)                                                                    AS records_per_sec,
+    DATE_TRUNC('SECOND',
+        TO_TIMESTAMP(RECORD_METADATA:SnowflakeConnectorPushTime::BIGINT / 1000)) AS second_bucket,
+    COUNT(*)                                                                      AS records_per_sec,
     AVG(DATEDIFF('millisecond',
-        TO_TIMESTAMP(RECORD_METADATA:SnowflakeConnectorPushTime::BIGINT / 1000),
-        CURRENT_TIMESTAMP()))                                                   AS avg_ingest_latency_ms
+        TO_TIMESTAMP(RECORD_METADATA:CreateTime::BIGINT / 1000),
+        TO_TIMESTAMP(RECORD_METADATA:SnowflakeConnectorPushTime::BIGINT / 1000))) AS avg_latency_ms
 FROM PAYMENTS_DB.RAW.AUTH_EVENTS_RAW_V3
-WHERE RECORD_METADATA:CreateTime::BIGINT >= DATEADD('MINUTE', -5, CURRENT_TIMESTAMP())::NUMBER
+WHERE TO_TIMESTAMP(RECORD_METADATA:SnowflakeConnectorPushTime::BIGINT / 1000)
+    >= DATEADD('MINUTE', -5, CURRENT_TIMESTAMP())
 GROUP BY 1
 ORDER BY 1 DESC;
 ```
+
+---
+
+## V4 HP Behavioral Gotchas
+
+These are non-obvious behaviors specific to Snowpipe Streaming HPA that caused real production issues
+in this project. None are bugs — they are correct Snowflake behavior, but they are underdocumented
+and violate reasonable intuitions about per-row ingestion.
+
+---
+
+### Gotcha 1 — `INGESTED_AT` is per-micro-partition, not per-row
+
+**What happens:** `INGESTED_AT DEFAULT CURRENT_TIMESTAMP()` in a user-defined pipe's `COPY INTO`
+is evaluated **once when Snowpipe Streaming opens a micro-partition for writing** — not once per row.
+All rows that accumulate in that open partition share the same `INGESTED_AT` value.
+
+**Observed effect:** A micro-partition opened at `17:49:45`. Events with `EVENT_TS` of `17:58`
+were written into that same partition. `INGESTED_AT − EVENT_TS = 17:49 − 17:58 = −8.5 minutes =
+−510,000 ms`. The latency chart showed `AVG_LATENCY_MS = −500,000 ms`.
+
+**Why it happens:** Snowpipe Streaming HPA buffers incoming rows in a micro-partition that stays
+open until it reaches a size or time threshold. The `COPY INTO` expression is evaluated at
+partition-open time, not at row-insert time. This is analogous to `DEFAULT` column expressions
+in other batch ETL systems that capture a batch start timestamp.
+
+**What you can measure instead:**
+- **Pipeline freshness:** `DATEDIFF('second', MAX(EVENT_TS), SYSDATE())` — how stale is the
+  newest visible event. Always positive and meaningful.
+- **Partition flush latency:** `DATEDIFF('millisecond', MIN(EVENT_TS), INGESTED_AT)` within a
+  single `INGESTED_AT` group — how long was the oldest event buffered before its partition was
+  written. Positive and accurate, but requires grouping by `INGESTED_AT`.
+
+**What you cannot measure:** True per-row ingest latency. HP mode does not expose it.
+
+---
+
+### Gotcha 2 — `CREATE OR REPLACE PIPE` invalidates all streaming channels (channel cleanup loop)
+
+**What happens:** Any execution of `CREATE OR REPLACE PIPE` — even with an identical definition —
+assigns a new internal pipe ID. Snowpipe Streaming channels are bound to the old pipe ID on the
+server side. After the pipe is recreated, the connector enters a **channel cleanup loop**:
+
+```
+Task 0 now using pipe AUTH_EVENTS_RAW
+Initialized streaming channel: AUTH_EVENTS_SINK_PAYMENTS_..._payments.auth_0
+Fetched snowflake committed offset: 0
+Cleaning up channel entry from cache: AUTH_EVENTS_SINK_PAYMENTS_..._payments.auth_0
+[60 seconds pass]
+Task 0 now using pipe AUTH_EVENTS_RAW    ← same cycle repeats
+```
+
+The connector log shows offsets advancing (the Kafka Consumer API accepts data), but **zero rows
+land in the Snowflake table**. The connector shows `RUNNING` with no errors.
+
+**Root cause:** The server-side channel state is associated with the pipe's internal ID, not its
+name. Recreating the pipe changes the ID. The old channel name maps to a broken server-side binding.
+Re-registering the channel under the same name does not clear this — the server still resolves the
+name to the old pipe ID's state.
+
+**The only fix:** Drop and recreate the **table** (not just the pipe). Dropping the table clears
+all server-side channel state associated with it. A fresh table + fresh pipe + connector restart
+creates clean channels with no stale bindings.
+
+```sql
+-- Fixes the channel cleanup loop — table drop is required, not just pipe drop
+DROP TABLE IF EXISTS PAYMENTS_DB.RAW.AUTH_EVENTS_RAW;
+-- Then recreate table + pipe via schemachange migration
+```
+
+**Prevention:** Never run `CREATE OR REPLACE PIPE` on a V4 HP pipe once the connector is live.
+To change the pipe definition, always pair it with a table drop/recreate in the same migration.
+
+---
+
+### Gotcha 3 — `CURRENT_TIMESTAMP()` returns `TIMESTAMP_LTZ`; comparing with `TIMESTAMP_NTZ` uses session timezone
+
+**What happens:** `EVENT_TS` is stored as `TIMESTAMP_NTZ` (timezone-naive UTC). When you filter:
+
+```sql
+WHERE EVENT_TS >= DATEADD('MINUTE', -5, CURRENT_TIMESTAMP())
+```
+
+Snowflake must resolve the type mismatch between `TIMESTAMP_NTZ EVENT_TS` and the
+`TIMESTAMP_LTZ` result of `CURRENT_TIMESTAMP()`. Snowflake converts the NTZ value to LTZ using
+the **session timezone**. In a PDT session (UTC-7), a stored UTC value of `17:00` is interpreted
+as `17:00 PDT = 00:00 UTC next day` — approximately 7 hours in the future from the query's
+perspective. This makes **all rows in the table pass the filter**, returning data from hours ago.
+
+In an SPCS session (which defaults to UTC), the same query works correctly. The same code
+produces different results depending on where it runs.
+
+**The SPCS 0-data symptom:** Before V1.14.0, `INGESTED_AT` was stored as LTZ (PDT session).
+Values were stored as `09:49:45 PDT`. The SPCS app's UTC session compared against
+`CURRENT_TIMESTAMP() = 17:xx UTC`. All `INGESTED_AT` values were ~7 hours in the past from
+the UTC threshold. Filter `INGESTED_AT >= 17:12 UTC` matched nothing because all stored
+values were `09:49 PDT` (`16:49 UTC`). Result: 0 rows, 0 metrics on the dashboard.
+
+**Fix:** Use `SYSDATE()` for time thresholds on `TIMESTAMP_NTZ` columns:
+
+```sql
+-- SYSDATE() returns TIMESTAMP_NTZ in UTC natively — no implicit conversion
+WHERE EVENT_TS >= DATEADD('MINUTE', -5, SYSDATE())
+```
+
+`SYSDATE()` always returns the current time as `TIMESTAMP_NTZ` in UTC regardless of session
+timezone. `NTZ vs NTZ` comparison requires no conversion and is safe in any session context.
+
+---
+
+### Gotcha 4 — `CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())` returns `TIMESTAMP_LTZ`, not `TIMESTAMP_NTZ`
+
+**What happens:** The 2-argument form `CONVERT_TIMEZONE(target_tz, source_value)` preserves the
+**type** of the input. `CURRENT_TIMESTAMP()` is `TIMESTAMP_LTZ`. After conversion, the result
+is still `TIMESTAMP_LTZ` — displayed as `17:49:45 +0000` (looks like UTC, but is typed as LTZ).
+
+Storing this in a `TIMESTAMP_NTZ` column works (the value is correct), but if you use it in a
+comparison without an explicit `::TIMESTAMP_NTZ` cast, you still get LTZ-vs-NTZ implicit
+conversion behavior, which is session-timezone-dependent.
+
+**Diagnostic query that confirmed this:**
+
+```sql
+SELECT
+    CURRENT_TIMESTAMP()                              AS ts_ltz,       -- TIMESTAMP_LTZ
+    SYSDATE()                                         AS ts_ntz,       -- TIMESTAMP_NTZ (UTC)
+    CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())      AS converted,    -- TIMESTAMP_LTZ (+0000)
+    CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ AS converted_ntz;  -- correct NTZ
+```
+
+**Fix:** Always add `::TIMESTAMP_NTZ` when storing converted timestamps in NTZ columns or
+comparing them with NTZ values:
+
+```sql
+-- In pipe COPY INTO — stores true UTC as NTZ type
+CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ
+```
+
+Or simply use `SYSDATE()` directly — it's shorter, always NTZ, always UTC, no cast required.
+
+---
+
+### Gotcha 5 — `CREATE OR REPLACE PIPE` resets all grants
+
+**What happens:** `CREATE OR REPLACE PIPE` is not an incremental operation. It drops and recreates
+the pipe object. All `GRANT` statements previously applied to the old pipe object are lost.
+
+After recreation, the connector role (`PAYMENTS_INGEST_ROLE`) has no privileges on the pipe and
+immediately fails with `ERR_PIPE_DOES_NOT_EXIST_OR_NOT_AUTHORIZED` — even though the pipe exists
+and is visible to `ACCOUNTADMIN`.
+
+**Required re-grants after any pipe recreation:**
+
+```sql
+GRANT MONITOR ON PIPE PAYMENTS_DB.RAW.AUTH_EVENTS_RAW TO ROLE PAYMENTS_INGEST_ROLE;
+GRANT OPERATE ON PIPE PAYMENTS_DB.RAW.AUTH_EVENTS_RAW TO ROLE PAYMENTS_INGEST_ROLE;
+```
+
+Both must be included in the same migration that creates the pipe. `MONITOR` alone is insufficient
+(see DEPLOY_TROUBLESHOOTING.md Issue 23). `OPERATE` is required for Snowpipe Streaming API access.
 
 ---
 
@@ -388,6 +631,99 @@ V4 HP is **not a drop-in replacement** for V3. Snowflake explicitly states: "Cur
 5. **Different buffer tuning** — V3 exposes `buffer.flush.time`, `buffer.count.records`, etc.; V4 HP manages these internally (no equivalent config keys)
 
 For this project, run them as **independent connectors on separate topics** (`payments.auth` for V4 HP, `payments.auth.v3` for V3) writing to separate tables (`AUTH_EVENTS_RAW` vs `AUTH_EVENTS_RAW_V3`). Do not attempt to share topics or pipes between them.
+
+---
+
+## Live Observations: Sustained Run (April 2, 2026)
+
+Both connectors observed under identical load from the `payments-generator` container.
+Concrete numbers from Docker logs for empirical reference.
+
+### V4 HP — Healthy, Continuous Operation
+
+**S3 upload performance (Rust SDK, `.ndjson` format):**
+
+| Metric | Observed range |
+|---|---|
+| Batch size processed | 2.37 MB – 2.98 MB per cycle |
+| Compressed file size uploaded | 275 KB – 350 KB |
+| Upload elapsed | 115 ms – 230 ms (typical); one spike to 721 ms |
+| Cadence | ~1 file per second, uninterrupted |
+| S3 path prefix | `streamingrowset/simplettl/` |
+| File format | `.ndjson` |
+
+**Process resource snapshot** (from `cyclone_shared::util::process_info_provider`):
+```
+process_used_memory_bytes: 1,627,176,960  (~1.55 GB)
+system_total_memory_bytes: 8,216,776,704  (~7.9 GB)
+cpu_usage_percent: 9.76%
+num_workers: 12
+num_tasks: 25
+queue_depth: 0                            ← keeping up with generator
+```
+
+**Log character:** Pure `INFO`. Zero `ERROR` or data-related `WARN` lines after startup. The
+only WARNs are one-time config notices at connector registration (see SKILL.md pitfall #13).
+
+### V3 — Offset Crisis (stuck since 22:22:14 April 1)
+
+**What happened:** The `payments.auth.v3` Kafka topic was reset. Kafka began redelivering
+from offset 0. The Snowflake channel retained its committed offset of **120,441,204**. V3's
+`DirectTopicPartitionChannel` correctly rejects any record whose offset is below the channel's
+high-water mark.
+
+**Gap math:**
+```
+Channel expects:    120,441,204
+Kafka delivering:         0 – 2,528,258  (as of 22:51 April 1)
+Records to skip before recovery: ~117.9 million
+```
+
+At the generator's rate, V3 would not reach offset 120,441,204 organically for many hours.
+Every incoming record since 22:22:14 has been silently dropped.
+
+**Log volume generated by the stall:**
+```
+2,528,258 WARN lines — one per skipped record
+```
+
+**Secondary warnings from the stall:**
+```
+WARN WorkerSinkTask{id=auth-events-sink-v3-0}
+     Ignoring invalid task provided offset payments.auth.v3-0/
+     OffsetAndMetadata{offset=120441205} -- not yet consumed, taskOffset=120441205 currentOffset=13638
+
+WARN WorkerSinkTask{id=auth-events-sink-v3-0} Commit of offsets timed out
+     (repeating every ~60 seconds)
+```
+
+Kafka Connect is attempting to commit offset 120,441,205 as complete, but the worker's actual
+consumer position has not reached it. This causes a timeout loop that will persist until the
+channel offset is reset.
+
+**V3 upload performance when it WAS working** (S3 upload logs from 22:51, just before stall):
+
+| Metric | Observed range |
+|---|---|
+| Blob size | 600 KB – 6.3 MB |
+| Upload time | 800 ms – 1,475 ms |
+| Row count per blob | 10,000 – 108,119 (variable; larger during catch-up bursts) |
+| S3 path prefix | `streaming_ingest/` |
+| File format | `.bdec` (columnar binary, gzip-compressed) |
+| Upload concurrency | Up to 36 threads in Java thread pool |
+| Registration round-trip | Explicit `registerBlobs` API call per batch |
+
+The build → upload → register three-phase pipeline is visible in V3 logs. V4 HP has no
+equivalent explicit registration step — it is handled server-side.
+
+### Side-by-Side Upload Latency
+
+| | V4 HP (Rust) | V3 (Java) |
+|---|---|---|
+| Typical upload | 115–230 ms | 800–1,475 ms |
+| Relative speed | ~4–8× faster per file | Baseline |
+| Format | `.ndjson` (pre-compressed inline) | `.bdec` (2-stage: build + gzip) |
+| Registration | Server-side, not visible in logs | Explicit API round-trip per batch |
 
 ---
 

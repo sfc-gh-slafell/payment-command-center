@@ -85,7 +85,7 @@ def _load_private_key():
     return key.private_bytes(Encoding.DER, PrivateFormat.PKCS8, NoEncryption())
 
 
-@st.cache_resource(show_spinner=False)
+@st.cache_resource(ttl=3300, show_spinner=False)  # 55 min — re-read SPCS token before 1 h expiry
 def get_connection() -> snowflake.connector.SnowflakeConnection:
     return _connect()
 
