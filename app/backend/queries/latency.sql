@@ -14,7 +14,7 @@ SELECT
     MAX(latency_sum_ms / NULLIF(latency_count, 0))       AS max_latency_ms,
     SUM(latency_count)                                    AS event_count
 FROM PAYMENTS_DB.SERVE.IT_AUTH_MINUTE_METRICS
-WHERE event_minute >= DATEADD('MINUTE', -%(time_range_minutes)s, CURRENT_TIMESTAMP())
+WHERE event_minute >= DATEADD('MINUTE', -%(time_range_minutes)s, SYSDATE())
   AND (%(env)s IS NULL OR env = %(env)s)
   AND (%(merchant_id)s IS NULL OR merchant_id = %(merchant_id)s)
   AND (%(region)s IS NULL OR region = %(region)s);
@@ -29,7 +29,7 @@ SELECT
 FROM (
     SELECT auth_latency_ms
     FROM PAYMENTS_DB.SERVE.IT_AUTH_EVENT_SEARCH
-    WHERE event_ts >= DATEADD('MINUTE', -%(time_range_minutes)s, CURRENT_TIMESTAMP())
+    WHERE event_ts >= DATEADD('MINUTE', -%(time_range_minutes)s, SYSDATE())
       AND (%(env)s IS NULL OR env = %(env)s)
     ORDER BY event_ts DESC
     LIMIT %(max_limit)s

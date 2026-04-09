@@ -32,3 +32,9 @@ build/
 
 # Claudedocs
 claudedocs/
+
+# Cortex CLI
+.cx_last_selection_cli
+
+# Local Kafka data
+kafka-data/

@@ -22,6 +22,9 @@ def create_producer() -> Producer:
             "batch.size": 16384,
             # Message size limit aligned with broker (10 MB)
             "message.max.bytes": 10485760,
+            # At 50k rps × 2 topics = 100k produce() calls/sec; default 100k fills in
+            # ~1s under backpressure. 500k gives 5s of headroom before BufferError.
+            "queue.buffering.max.messages": 500000,
         }
     )
 

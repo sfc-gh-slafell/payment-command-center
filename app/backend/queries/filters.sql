@@ -11,4 +11,4 @@ SELECT
     ARRAY_AGG(DISTINCT issuer_bin) AS issuer_bins,
     ARRAY_AGG(DISTINCT payment_method) AS payment_methods
 FROM PAYMENTS_DB.SERVE.IT_AUTH_MINUTE_METRICS
-WHERE event_minute >= DATEADD('HOUR', -24, CURRENT_TIMESTAMP());
+WHERE event_minute >= DATEADD('HOUR', -24, SYSDATE());

@@ -66,7 +66,7 @@ async def get_summary(
     freshness = FreshnessInfo()
     try:
         raw_rows = client.execute_query(
-            "SELECT MAX(ingested_at) AS last_raw_ts FROM PAYMENTS_DB.RAW.AUTH_EVENTS_RAW",
+            "SELECT MAX(EVENT_TS) AS last_raw_ts FROM PAYMENTS_DB.RAW.AUTH_EVENTS_RAW_V4",
             use_standard_wh=True,
         )
         if raw_rows and raw_rows[0].get("LAST_RAW_TS"):

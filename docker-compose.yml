@@ -4,6 +4,10 @@ services:
     container_name: payments-kafka
     ports:
       - "9092:9092"
+    volumes:
+      # Bind mount keeps logs on host disk — avoids filling the container's overlay2 layer.
+      # To wipe and start fresh: rm -rf ./kafka-data
+      - ./kafka-data:/tmp/kraft-logs
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -19,6 +23,34 @@ services:
       KAFKA_MESSAGE_MAX_BYTES: 10485760
       KAFKA_REPLICA_FETCH_MAX_BYTES: 10485760
       KAFKA_SOCKET_REQUEST_MAX_BYTES: 10485760
+      # Log retention — prevent disk fill at 38k+ rps (200 MB/partition × 48 partitions = ~9.6 GB max)
+      KAFKA_LOG_RETENTION_MS: "3600000"               # 1 hour max age
+      KAFKA_LOG_RETENTION_BYTES: "209715200"          # 200 MB per partition
+      KAFKA_LOG_SEGMENT_BYTES: "10485760"             # 10 MB segments for timely cleanup
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: "30000"  # Check every 30s
+
+  kafka-init:
+    # One-shot container: waits for Kafka, creates topics with 48 partitions, exits 0.
+    # Connect workers depend on this completing before they start.
+    image: apache/kafka:4.0.2
+    container_name: payments-kafka-init
+    depends_on:
+      - kafka
+    command:
+      - /bin/sh
+      - -c
+      - |
+        echo "Waiting for Kafka broker to be ready..."
+        until /opt/kafka/bin/kafka-topics.sh \
+            --bootstrap-server kafka:29092 --list > /dev/null 2>&1; do
+          sleep 2
+        done
+        echo "Broker ready. Creating topics (48 partitions each)..."
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 \
+          --create --if-not-exists \
+          --topic payments.auth --partitions 48 --replication-factor 1
+        echo "Topics ready."
+    restart: "no"
 
   kafka-connect:
     build:
@@ -54,7 +86,36 @@ services:
       CONNECT_CONFIG_PROVIDERS: "env"
       CONNECT_CONFIG_PROVIDERS_ENV_CLASS: "org.apache.kafka.common.config.provider.EnvVarConfigProvider"
     depends_on:
-      - kafka
+      kafka-init:
+        condition: service_completed_successfully
+
+  # ---------------------------------------------------------------------------
+  # Fallback relay — Python consumer writing to AUTH_EVENTS_RAW via write_pandas.
+  # Dormant by default (profiles: [fallback]).  Start manually for the
+  # resilience demo:  docker compose --profile fallback up -d fallback-relay
+  # ---------------------------------------------------------------------------
+  fallback-relay:
+    build:
+      context: fallback_ingest
+      dockerfile: Dockerfile
+    container_name: payments-fallback-relay
+    profiles: [fallback]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:29092"
+      KAFKA_TOPIC: "payments.auth"
+      KAFKA_GROUP_ID: "snowflake-fallback-relay"
+      BATCH_SIZE: "500"
+      BATCH_TIMEOUT: "3.0"
+      SNOWFLAKE_ACCOUNT: "${SNOWFLAKE_ACCOUNT}"
+      SNOWFLAKE_USER: "${SNOWFLAKE_USER}"
+      SNOWFLAKE_PRIVATE_KEY: "${SNOWFLAKE_PRIVATE_KEY}"
+      SNOWFLAKE_DATABASE: "PAYMENTS_DB"
+      SNOWFLAKE_SCHEMA: "RAW"
+      SNOWFLAKE_WAREHOUSE: "PAYMENTS_ADMIN_WH"
+      SNOWFLAKE_ROLE: "PAYMENTS_INGEST_ROLE"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
 
   generator:
     build:
@@ -67,9 +128,9 @@ services:
       # Kafka connection — use internal listener for container-to-container traffic
       KAFKA_BOOTSTRAP_SERVERS: "kafka:29092"
       KAFKA_TOPIC: "payments.auth"
-      # Generator defaults (can be changed via API)
-      GENERATOR_RATE: "500"
+      GENERATOR_RATE: "50000"
       GENERATOR_ENV: "dev"
     depends_on:
-      - kafka
+      kafka-init:
+        condition: service_completed_successfully
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

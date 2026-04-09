@@ -24,7 +24,6 @@ SELECT
     auth_status,
     decline_code,
     auth_latency_ms,
-    ingested_at,
 
     -- Latency tier classification
     CASE

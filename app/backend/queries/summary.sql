@@ -10,7 +10,7 @@ WITH current_window AS (
         SUM(latency_sum_ms) / NULLIF(SUM(latency_count), 0)   AS avg_latency_ms,
         SUM(total_amount)                                      AS total_amount
     FROM PAYMENTS_DB.SERVE.IT_AUTH_MINUTE_METRICS
-    WHERE event_minute >= DATEADD('MINUTE', -%(time_range_minutes)s, CURRENT_TIMESTAMP())
+    WHERE event_minute >= DATEADD('MINUTE', -%(time_range_minutes)s, SYSDATE())
       AND (%(env)s IS NULL OR env = %(env)s)
       AND (%(merchant_id)s IS NULL OR merchant_id = %(merchant_id)s)
       AND (%(region)s IS NULL OR region = %(region)s)
@@ -25,8 +25,8 @@ previous_window AS (
         SUM(latency_sum_ms) / NULLIF(SUM(latency_count), 0)   AS avg_latency_ms,
         SUM(total_amount)                                      AS total_amount
     FROM PAYMENTS_DB.SERVE.IT_AUTH_MINUTE_METRICS
-    WHERE event_minute >= DATEADD('MINUTE', -(%(time_range_minutes)s * 2), CURRENT_TIMESTAMP())
-      AND event_minute < DATEADD('MINUTE', -%(time_range_minutes)s, CURRENT_TIMESTAMP())
+    WHERE event_minute >= DATEADD('MINUTE', -(%(time_range_minutes)s * 2), SYSDATE())
+      AND event_minute < DATEADD('MINUTE', -%(time_range_minutes)s, SYSDATE())
       AND (%(env)s IS NULL OR env = %(env)s)
       AND (%(merchant_id)s IS NULL OR merchant_id = %(merchant_id)s)
       AND (%(region)s IS NULL OR region = %(region)s)

@@ -428,7 +428,7 @@ footer{
         <span class="node-icon">&#9889;</span>
         <h3>Event Generator</h3>
         <div class="node-tech">generator/producer.py &middot; confluent_kafka</div>
-        <div class="node-desc">500-2,000 synthetic payment auth events/sec. JSON messages keyed by merchant_id with zstd compression.</div>
+        <div class="node-desc">Synthetic payment auth events at configurable rate (default 500/sec, up to 50k via docker-compose). Pre-generated pool of 50k events, dispatched at 10 Hz. JSON messages keyed by merchant_id with zstd compression.</div>
       </div>
 
       <div class="flow-connector" style="position:relative">
@@ -439,8 +439,8 @@ footer{
       <div class="flow-node">
         <span class="node-icon">&#128230;</span>
         <h3>Kafka Topic: payments.auth</h3>
-        <div class="node-tech">Apache Kafka 4.0 (KRaft) &middot; 24 partitions &middot; 72h retention</div>
-        <div class="node-desc">Single shared topic for all environments. Partition key = merchant_id ensures per-merchant ordering.</div>
+        <div class="node-tech">Apache Kafka 4.0 (KRaft) &middot; 48 partitions &middot; 72hr topic retention (broker: 1hr / 200 MB)</div>
+        <div class="node-desc">Single topic: payments.auth. Partition key = merchant_id ensures per-merchant ordering.</div>
       </div>
 
       <div class="flow-connector"></div>
@@ -455,10 +455,10 @@ footer{
           <div style="margin-top:.5rem"><span class="tag tag-green">5-10s latency</span></div>
         </div>
         <div class="flow-node" style="border-color:var(--amber-dim)">
-          <span class="node-icon">&#128296;</span>
-          <h3>Python Batch Relay</h3>
-          <div class="node-tech" style="color:var(--amber)">fallback_ingest/ &middot; write_pandas</div>
-          <div class="node-desc">Batch consumer with configurable flush (1,000 rows / 5s). Activated if HP connector unavailable.</div>
+          <span class="node-icon">&#128202;</span>
+          <h3>Python Fallback Relay</h3>
+          <div class="node-tech" style="color:var(--amber)">fallback_ingest/relay.py &middot; consumer group: snowflake-fallback-relay</div>
+          <div class="node-desc">Alternative Kafka consumer on the same payments.auth topic. Batches events (1,000 rows / 5s timeout) and writes via write_pandas to AUTH_EVENTS_RAW. Activated when HP Connector is unavailable. Separate consumer group avoids offset conflict.</div>
           <div style="margin-top:.5rem"><span class="tag tag-amber">1-3 min latency</span></div>
         </div>
       </div>
@@ -468,9 +468,9 @@ footer{
       <!-- RAW -->
       <div class="flow-node">
         <span class="node-icon">&#128451;</span>
-        <h3>PAYMENTS_DB.RAW.AUTH_EVENTS_RAW</h3>
+        <h3>PAYMENTS_DB.RAW.AUTH_EVENTS_RAW_V4</h3>
         <div class="node-tech">Snowflake Standard Table &middot; 22 columns &middot; 14-day retention</div>
-        <div class="node-desc">Shared landing table for all environments. Logical isolation via <code style="color:var(--cyan)">env</code> column (dev / preprod / prod). Kafka metadata preserved.</div>
+        <div class="node-desc">Landing table for HP Connector v4 ingest (fallback relay writes to AUTH_EVENTS_RAW). Logical isolation via <code style="color:var(--cyan)">env</code> column (dev / preprod / prod). Kafka metadata preserved.</div>
       </div>
 
       <div class="flow-connector"></div>
@@ -504,23 +504,40 @@ footer{
 
       <div class="flow-connector"></div>
 
-      <!-- Backend -->
-      <div class="flow-node">
-        <span class="node-icon">&#9881;</span>
-        <h3>FastAPI Backend</h3>
-        <div class="node-tech">app/backend/ &middot; Dual Warehouse Routing</div>
-        <div class="node-desc">6 API endpoints. Interactive WH for SERVE queries, Admin WH for RAW freshness. SPCS token auth in production.</div>
-        <div style="margin-top:.5rem"><span class="tag tag-cyan">~100-200ms</span></div>
+      <!-- Backend + Streamlit Branch -->
+      <div class="flow-branch">
+        <div class="flow-node" style="border-color:var(--cyan-dim)">
+          <span class="node-icon">&#9881;</span>
+          <h3>FastAPI Backend</h3>
+          <div class="node-tech" style="color:var(--cyan)">app/backend/ &middot; SERVE schema</div>
+          <div class="node-desc">6 API endpoints. Interactive WH for SERVE queries, Admin WH for RAW freshness. SPCS token auth in production. Serves React SPA as static files from <code style="color:var(--cyan)">frontend/dist/</code>.</div>
+          <div style="margin-top:.5rem"><span class="tag tag-cyan">~100-200ms</span></div>
+        </div>
+        <div class="flow-node" style="border-color:var(--purple-dim)">
+          <span class="node-icon">&#128200;</span>
+          <h3>Streamlit Analytics</h3>
+          <div class="node-tech" style="color:var(--purple)">curated_analytics/ &middot; CURATED schema</div>
+          <div class="node-desc">4 analytics pages reading DT_AUTH_ENRICHED, DT_AUTH_HOURLY, DT_AUTH_DAILY via PAYMENTS_REFRESH_WH. Hourly trends, merchant analysis, latency patterns, connector benchmark.</div>
+          <div style="margin-top:.5rem"><span class="tag tag-purple">PAYMENTS_REFRESH_WH</span></div>
+        </div>
       </div>
 
       <div class="flow-connector"></div>
 
-      <!-- Dashboard -->
-      <div class="flow-node" style="border-color:var(--cyan-dim);box-shadow:0 0 60px var(--cyan-glow)">
-        <span class="node-icon">&#128187;</span>
-        <h3>React Dashboard</h3>
-        <div class="node-tech">React 18 + TypeScript + Tailwind &middot; SPCS Container</div>
-        <div class="node-desc">8 components: KPI cards, time series, breakdown drilldown, latency histogram, freshness indicator. Single container on port 8080.</div>
+      <!-- Frontend Branch -->
+      <div class="flow-branch">
+        <div class="flow-node" style="border-color:var(--cyan-dim);box-shadow:0 0 60px var(--cyan-glow)">
+          <span class="node-icon">&#128187;</span>
+          <h3>React Dashboard</h3>
+          <div class="node-tech">React 18 + TypeScript + Tailwind &middot; SPCS Container</div>
+          <div class="node-desc">9 components: KPI cards, time series, breakdown drilldown, latency histogram, freshness indicator, scenario badge. Ops focus — 15-second polling, 15-minute rolling window.</div>
+        </div>
+        <div class="flow-node" style="border-color:var(--purple-dim);box-shadow:0 0 60px #b388ff22">
+          <span class="node-icon">&#128200;</span>
+          <h3>Streamlit Analytics UI</h3>
+          <div class="node-tech" style="color:var(--purple)">4-page multi-page app &middot; SPCS / local</div>
+          <div class="node-desc">Historical analysis: 7–30 day window. Hourly and daily aggregations, merchant drilldown, latency tier distributions, connector benchmark visualization.</div>
+        </div>
       </div>
     </div>
   </div>
@@ -559,12 +576,12 @@ footer{
 
           <table class="info-table">
             <tr><th>Property</th><th>Value</th></tr>
-            <tr><td>Topic</td><td>payments.auth</td></tr>
-            <tr><td>Partitions</td><td>24</td></tr>
-            <tr><td>Retention</td><td>72 hours</td></tr>
+            <tr><td>Topics</td><td>payments.auth</td></tr>
+            <tr><td>Partitions</td><td>48</td></tr>
+            <tr><td>Retention</td><td>72 hours (topic config) / broker override: 1hr, 200 MB per partition</td></tr>
             <tr><td>Compression</td><td>zstd (end-to-end)</td></tr>
-            <tr><td>Baseline rate</td><td>500 events/sec</td></tr>
-            <tr><td>Peak rate</td><td>2,000 events/sec</td></tr>
+            <tr><td>Default rate</td><td>500 events/sec (up to 50k via GENERATOR_RATE env var)</td></tr>
+            <tr><td>Event pool</td><td>50k pre-generated, 10 Hz tick</td></tr>
           </table>
 
           <h4 style="font-size:.9rem;margin-top:1.5rem;margin-bottom:.75rem;color:var(--text)">Scenario Profiles</h4>
@@ -608,10 +625,10 @@ footer{
           <table class="info-table">
             <tr><th>Config</th><th>Value</th></tr>
             <tr><td>connector.class</td><td>SnowflakeStreamingSinkConnector</td></tr>
-            <tr><td>tasks.max</td><td>1</td></tr>
+            <tr><td>tasks.max</td><td>4</td></tr>
             <tr><td>role</td><td>PAYMENTS_INGEST_ROLE</td></tr>
-            <tr><td>topic2table.map</td><td>payments.auth:AUTH_EVENTS_RAW</td></tr>
-            <tr><td>metadata</td><td>topic + offset + partition</td></tr>
+            <tr><td>topic2table.map</td><td>payments.auth:AUTH_EVENTS_RAW_V4</td></tr>
+            <tr><td>snowflake.metadata.offset.and.partition</td><td>true</td></tr>
             <tr><td>errors.tolerance</td><td>all (log, don't stop)</td></tr>
           </table>
         </div>
@@ -628,10 +645,10 @@ footer{
         </div>
         <div class="hop-content">
           <h3>Interactive Tables &mdash; Hot Serving Path</h3>
-          <p>Two interactive tables materialize from RAW with 60-second TARGET_LAG. <code>PAYMENTS_REFRESH_WH</code> (standard) materializes; <code>PAYMENTS_INTERACTIVE_WH</code> (interactive) serves queries.</p>
+          <p>Two interactive tables materialize from AUTH_EVENTS_RAW_V4 with 60-second TARGET_LAG. <code>PAYMENTS_REFRESH_WH</code> (standard) materializes; <code>PAYMENTS_INTERACTIVE_WH</code> (interactive) serves queries.</p>
 
           <h4 style="font-size:.9rem;margin:1.5rem 0 .75rem;color:var(--text)">IT_AUTH_MINUTE_METRICS (22 columns)</h4>
-          <p>Minute-level aggregates with deduplication. 2-hour rolling window.</p>
+          <p>Minute-level aggregates. 2-hour rolling window. No deduplication needed &mdash; HP v4 Snowpipe Streaming guarantees exactly-once delivery per Kafka offset.</p>
           <div style="display:flex;flex-wrap:wrap;gap:.25rem;margin:.75rem 0">
             <span class="tag tag-cyan">event_minute</span>
             <span class="tag tag-cyan">env</span>
@@ -650,7 +667,7 @@ footer{
           <p style="font-size:.82rem;color:var(--text3)">Latency stored as SUM/COUNT for correct weighted reaggregation across dimension slices.</p>
 
           <h4 style="font-size:.9rem;margin:1.5rem 0 .75rem;color:var(--text)">IT_AUTH_EVENT_SEARCH (16 columns)</h4>
-          <p>Event-level records for drill-down. 60-minute rolling window, deduplicated, ordered by event_ts DESC.</p>
+          <p>Event-level records for drill-down. 60-minute rolling window, ordered by event_ts DESC.</p>
           <div style="display:flex;flex-wrap:wrap;gap:.25rem;margin:.75rem 0">
             <span class="tag tag-purple">event_ts</span>
             <span class="tag tag-purple">event_id</span>
@@ -679,7 +696,7 @@ footer{
 
           <table class="info-table">
             <tr><th>Endpoint</th><th>Source Table</th><th>Purpose</th></tr>
-            <tr><td>/api/v1/summary</td><td>IT_AUTH_MINUTE_METRICS + RAW</td><td>KPI cards with current vs previous window</td></tr>
+            <tr><td>/api/v1/summary</td><td>IT_AUTH_MINUTE_METRICS + AUTH_EVENTS_RAW_V4</td><td>KPI cards with current vs previous window</td></tr>
             <tr><td>/api/v1/timeseries</td><td>IT_AUTH_MINUTE_METRICS</td><td>Minute-bucketed line chart</td></tr>
             <tr><td>/api/v1/breakdown</td><td>IT_AUTH_MINUTE_METRICS</td><td>Top-N dimension drill-down with deltas</td></tr>
             <tr><td>/api/v1/events</td><td>IT_AUTH_EVENT_SEARCH</td><td>Recent transactions (filterable)</td></tr>
@@ -707,7 +724,7 @@ footer{
         </div>
         <div class="hop-content">
           <h3>React Dashboard Components</h3>
-          <p>Static React build served from the same FastAPI container. 8 components share a centralized filter state that propagates to all API calls simultaneously.</p>
+          <p>Static React build served from the same FastAPI container. 9 components share a centralized filter state. Most components propagate filters directly; RecentFailures hardcodes auth_status=DECLINED, TimeSeriesChart enforces a minimum 60-minute window.</p>
 
           <div class="comp-grid" style="margin-top:1.25rem">
             <div class="comp-card">
@@ -739,7 +756,7 @@ footer{
               <div>
                 <h4>BreakdownTable</h4>
                 <div class="comp-endpoint">/api/v1/breakdown</div>
-                <p>Dimension drill-down with period deltas</p>
+                <p>Dimension drill-down (merchant, region, issuer_bin, card_brand) with period deltas</p>
               </div>
             </div>
             <div class="comp-card">
@@ -747,7 +764,7 @@ footer{
               <div>
                 <h4>RecentFailures</h4>
                 <div class="comp-endpoint">/api/v1/events</div>
-                <p>Declined/errored transactions table</p>
+                <p>Declined transactions table (hardcoded DECLINED filter)</p>
               </div>
             </div>
             <div class="comp-card">
@@ -772,6 +789,14 @@ footer{
                 <h4>FreshnessWidget</h4>
                 <div class="comp-endpoint">/api/v1/summary</div>
                 <p>Raw ingest lag vs serve refresh lag</p>
+              </div>
+            </div>
+            <div class="comp-card">
+              <div class="comp-icon">&#127991;</div>
+              <div>
+                <h4>ScenarioBadge</h4>
+                <div class="comp-endpoint">/api/v1/summary</div>
+                <p>Active scenario indicator (baseline, issuer_outage, latency_spike, etc.)</p>
               </div>
             </div>
           </div>
@@ -895,10 +920,152 @@ footer{
 
 <div class="divider"></div>
 
+<!-- ═══════════════ INFRASTRUCTURE LAYERS ═══════════════ -->
+<section id="infra">
+  <div class="container">
+    <span class="section-num">05 &mdash; Infrastructure Layers</span>
+    <h2 class="section-title">Terraform &amp; schemachange</h2>
+    <p class="section-sub">Infrastructure is deployed in ordered layers. Terraform owns account-level objects; schemachange owns versioned schema objects. CI/CD enforces the dependency chain.</p>
+
+    <!-- Layer Diagram -->
+    <div style="display:grid;grid-template-columns:60px 1fr;gap:1.5rem;margin-bottom:3rem">
+      <!-- Layer 0 -->
+      <div style="text-align:center">
+        <div style="font-family:var(--mono);font-size:1.8rem;font-weight:700;color:var(--cyan)">L0</div>
+        <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.08em">Terraform</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--cyan);border-radius:12px;padding:1.25rem 1.5rem">
+        <h4 style="font-size:.95rem;margin-bottom:.5rem">Account Infrastructure</h4>
+        <p style="font-size:.85rem;color:var(--text2);margin-bottom:.75rem">Stable objects that change infrequently. Import blocks handle cold-start idempotency (<code style="color:var(--cyan)">imports.tf</code>).</p>
+        <div style="display:flex;flex-wrap:wrap;gap:.25rem">
+          <span class="tag tag-cyan">PAYMENTS_DB</span>
+          <span class="tag tag-cyan">RAW / SERVE / CURATED / APP schemas</span>
+          <span class="tag tag-cyan">4 roles + hierarchy</span>
+          <span class="tag tag-cyan">3 warehouses</span>
+          <span class="tag tag-cyan">PAYMENTS_DASHBOARD_POOL</span>
+          <span class="tag tag-cyan">DASHBOARD_REPO image repo</span>
+          <span class="tag tag-cyan">SPECS internal stage</span>
+          <span class="tag tag-cyan">PAYMENTS_MONITOR (100 credits)</span>
+          <span class="tag tag-cyan">Pipe IF NOT EXISTS</span>
+        </div>
+      </div>
+      <!-- Layer 1 -->
+      <div style="text-align:center">
+        <div style="font-family:var(--mono);font-size:1.8rem;font-weight:700;color:var(--green)">L1</div>
+        <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.08em">schemachange</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--green);border-radius:12px;padding:1.25rem 1.5rem">
+        <h4 style="font-size:.95rem;margin-bottom:.5rem">Versioned Schema Objects</h4>
+        <p style="font-size:.85rem;color:var(--text2);margin-bottom:.75rem">15 migrations (V1.0.0 &ndash; V1.15.0) tracked in <code style="color:var(--green)">SCHEMACHANGE_HISTORY</code>. Runs as PAYMENTS_ADMIN_ROLE on PAYMENTS_ADMIN_WH.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:.25rem">
+          <span class="tag tag-green">AUTH_EVENTS_RAW table</span>
+          <span class="tag tag-green">IT_AUTH_MINUTE_METRICS</span>
+          <span class="tag tag-green">IT_AUTH_EVENT_SEARCH</span>
+          <span class="tag tag-green">Pipe CREATE OR REPLACE</span>
+          <span class="tag tag-green">Object-level grants</span>
+          <span class="tag tag-green">Warehouse &harr; IT bindings</span>
+        </div>
+      </div>
+      <!-- Layer 2 -->
+      <div style="text-align:center">
+        <div style="font-family:var(--mono);font-size:1.8rem;font-weight:700;color:var(--purple)">L2</div>
+        <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.08em">dbt</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--purple);border-radius:12px;padding:1.25rem 1.5rem">
+        <h4 style="font-size:.95rem;margin-bottom:.5rem">Curated Transformations</h4>
+        <p style="font-size:.85rem;color:var(--text2);margin-bottom:.75rem">Dynamic tables in CURATED schema. Depends on L1 raw objects existing.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:.25rem">
+          <span class="tag tag-purple">dt_auth_enriched (5 min lag)</span>
+          <span class="tag tag-purple">dt_auth_hourly (30 min lag)</span>
+          <span class="tag tag-purple">dt_auth_daily (1 hr lag)</span>
+        </div>
+      </div>
+      <!-- Layer 3 -->
+      <div style="text-align:center">
+        <div style="font-family:var(--mono);font-size:1.8rem;font-weight:700;color:var(--amber)">L3</div>
+        <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.08em">SPCS</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--amber);border-radius:12px;padding:1.25rem 1.5rem">
+        <h4 style="font-size:.95rem;margin-bottom:.5rem">Application Services</h4>
+        <p style="font-size:.85rem;color:var(--text2);margin-bottom:.75rem">Containers in PAYMENTS_DB.APP. Uses stage + image repo from L0.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:.25rem">
+          <span class="tag tag-amber">PAYMENT_DASHBOARD service</span>
+          <span class="tag tag-amber">FastAPI + React (single container)</span>
+          <span class="tag tag-amber">Streamlit analytics</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CI/CD Pipeline -->
+    <h3 style="font-size:1.1rem;margin:0 0 1.5rem;color:var(--text)">CI/CD Execution Order</h3>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:1.5rem 2rem">
+      <div class="code-block" style="margin:0"><span class="cm">## deploy.yml &mdash; GitHub Actions dependency chain</span>
+
+<span class="num">1.</span> <span class="fn">terraform-apply</span>      <span class="cm"># L0: database, roles, warehouses, compute, stages</span>
+   &darr;
+<span class="num">2.</span> <span class="fn">schemachange-deploy</span>  <span class="cm"># L1: tables, interactive tables, pipes, grants</span>
+   &darr;                     <span class="cm"># (reads role/WH names from Terraform outputs)</span>
+<span class="num">3.</span> <span class="fn">dbt-run</span>              <span class="cm"># L2: dynamic tables in CURATED</span>
+
+<span class="num">2b.</span> <span class="fn">docker-push</span>         <span class="cm"># parallel with L1: build &amp; push container image</span>
+<span class="num">2c.</span> <span class="fn">kafka-connector</span>     <span class="cm"># parallel with L1: deploy HP connector config</span>
+
+<span class="num">4.</span> <span class="fn">spcs-deploy</span>          <span class="cm"># L3: deploy service to SPCS (needs L0 + L2b)</span></div>
+    </div>
+
+    <!-- Key Patterns -->
+    <h3 style="font-size:1.1rem;margin:3rem 0 1.5rem;color:var(--text)">Notable Patterns</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1.5rem">
+      <div class="role-card">
+        <h4 style="color:var(--cyan)">Pipe Ownership Split</h4>
+        <div class="role-name">terraform/pipes.tf + schemachange V1.6.0+</div>
+        <p>Terraform uses <code style="color:var(--cyan)">CREATE PIPE IF NOT EXISTS</code> to avoid destroying the active Snowpipe Streaming channel. schemachange uses <code style="color:var(--green)">CREATE OR REPLACE</code> for definition updates, re-granting MONITOR + OPERATE after each replacement.</p>
+      </div>
+      <div class="role-card">
+        <h4 style="color:var(--cyan)">Import Blocks</h4>
+        <div class="role-name">terraform/imports.tf &middot; 13 resources</div>
+        <p>Permanent import blocks (v2.x compound IDs like <code style="color:var(--cyan)">"PAYMENTS_DB|RAW"</code>) enable idempotent <code>terraform apply</code> on cold deploys where state is missing but objects exist.</p>
+      </div>
+      <div class="role-card">
+        <h4 style="color:var(--green)">Privilege Re-Granting</h4>
+        <div class="role-name">schemachange V1.13.0, V1.14.0</div>
+        <p><code style="color:var(--green)">CREATE OR REPLACE</code> resets all grants on the object. Migrations explicitly re-grant MONITOR, OPERATE, and SELECT after every pipe or table recreation.</p>
+      </div>
+      <div class="role-card">
+        <h4 style="color:var(--green)">IT Source Migration</h4>
+        <div class="role-name">schemachange V1.15.0</div>
+        <p>Interactive tables switched from AUTH_EVENTS_RAW to AUTH_EVENTS_RAW_V4. Removed QUALIFY ROW_NUMBER() deduplication &mdash; HP v4 Snowpipe Streaming guarantees exactly-once delivery per Kafka offset.</p>
+      </div>
+    </div>
+
+    <!-- Migration Timeline -->
+    <h3 style="font-size:1.1rem;margin:3rem 0 1.5rem;color:var(--text)">schemachange Migration Timeline</h3>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:1.5rem 2rem">
+      <table class="info-table">
+        <tr><th>Version</th><th>Object</th><th>Action</th></tr>
+        <tr><td style="color:var(--green)">V1.0.0</td><td>AUTH_EVENTS_RAW</td><td>Create raw landing table (17 cols)</td></tr>
+        <tr><td style="color:var(--green)">V1.1.0</td><td>Grants</td><td>INSERT/SELECT on raw table to roles</td></tr>
+        <tr><td style="color:var(--green)">V1.2.0</td><td>Interactive Tables</td><td>Create IT_AUTH_MINUTE_METRICS + IT_AUTH_EVENT_SEARCH</td></tr>
+        <tr><td style="color:var(--green)">V1.3.0</td><td>Warehouse</td><td>Resume PAYMENTS_INTERACTIVE_WH</td></tr>
+        <tr><td style="color:var(--green)">V1.4.0</td><td>Grants</td><td>SELECT on all SERVE tables + FUTURE</td></tr>
+        <tr><td style="color:var(--green)">V1.5.0</td><td>Grants</td><td>Explicit SELECT on interactive tables</td></tr>
+        <tr><td style="color:var(--green)">V1.6.0</td><td>Pipe</td><td>Create AUTH_EVENTS_RAW pipe + GRANT MONITOR</td></tr>
+        <tr><td style="color:var(--green)">V1.7.0</td><td>Grants</td><td>OPERATE on pipe for HP connector</td></tr>
+        <tr><td style="color:var(--green)">V1.8.0</td><td>Warehouse</td><td>Bind interactive tables to PAYMENTS_INTERACTIVE_WH</td></tr>
+        <tr><td style="color:var(--green)">V1.13.0</td><td>Pipe</td><td>Fix INGESTED_AT timezone (CONVERT_TIMEZONE UTC)</td></tr>
+        <tr><td style="color:var(--green)">V1.14.0</td><td>Table + Pipe</td><td>Reset raw table + pipe (clear channel state)</td></tr>
+        <tr><td style="color:var(--green)">V1.15.0</td><td>Interactive Tables</td><td>Switch source to AUTH_EVENTS_RAW_V4, remove dedup</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
 <!-- ═══════════════ TECH STACK ═══════════════ -->
 <section id="tech">
   <div class="container">
-    <span class="section-num">05 &mdash; Technology Stack</span>
+    <span class="section-num">06 &mdash; Technology Stack</span>
     <h2 class="section-title">Technologies &amp; Their Purpose</h2>
     <p class="section-sub">Every tool in the pipeline and why it was chosen.</p>
 
@@ -906,7 +1073,7 @@ footer{
       <div class="role-card">
         <h4 style="color:var(--cyan)">Apache Kafka (KRaft)</h4>
         <div class="role-name">Event Streaming</div>
-        <p>Decouples generator from Snowflake. 72h retention provides replay window for recovery. KRaft mode eliminates Zookeeper dependency. zstd compression minimizes network cost.</p>
+        <p>Decouples generator from Snowflake. 72h topic retention provides replay window for recovery (broker-level override may apply in demo environments). KRaft mode eliminates Zookeeper dependency. zstd compression minimizes network cost.</p>
       </div>
       <div class="role-card">
         <h4 style="color:var(--green)">Snowpipe Streaming (HP Connector)</h4>
@@ -941,7 +1108,7 @@ footer{
       <div class="role-card">
         <h4 style="color:var(--purple)">schemachange</h4>
         <div class="role-name">Schema Migrations</div>
-        <p>Versioned DDL for tables, interactive tables, and grants. 8 migrations from raw landing table through privilege configuration.</p>
+                <p>Versioned DDL for tables, interactive tables, and grants. 15 migrations (V1.0.0–V1.15.0) from raw landing table through complete privilege configuration.</p>
       </div>
     </div>
   </div>
@@ -975,7 +1142,7 @@ const barObserver = new IntersectionObserver((entries) => {
 bars.forEach(b => barObserver.observe(b));
 
 // ─── TOC nav dots ───
-const sections = ['top','pipeline','hops','latency','access','tech'];
+const sections = ['top','pipeline','hops','latency','access','infra','tech'];
 const toc = document.getElementById('toc');
 sections.forEach(id => {
   const a = document.createElement('a');

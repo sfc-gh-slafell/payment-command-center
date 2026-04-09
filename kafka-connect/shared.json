@@ -1,8 +1,8 @@
 {
-  "name": "auth-events-sink-payments",
+  "name": "auth-events-sink-v4",
   "config": {
     "connector.class": "com.snowflake.kafka.connector.SnowflakeStreamingSinkConnector",
-    "tasks.max": "1",
+    "tasks.max": "4",
     "topics": "payments.auth",
 
     "snowflake.url.name": "${env:SNOWFLAKE_URL}",
@@ -12,7 +12,7 @@
     "snowflake.schema.name": "RAW",
     "snowflake.role.name": "PAYMENTS_INGEST_ROLE",
 
-    "snowflake.topic2table.map": "payments.auth:AUTH_EVENTS_RAW",
+    "snowflake.topic2table.map": "payments.auth:AUTH_EVENTS_RAW_V4",
     "snowflake.metadata.topic": "true",
     "snowflake.metadata.offset.and.partition": "true",
 
