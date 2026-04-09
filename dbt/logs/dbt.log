@@ -1,0 +1,231 @@
+[0m12:40:14.744212 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'start', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10c229550>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10d88bb10>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10d88bd90>]}
+
+
+============================== 12:40:14.771234 | 93679119-98ee-4473-9e2e-7f4762dcd407 ==============================
+[0m12:40:14.771234 [info ] [MainThread]: Running with dbt=1.11.7
+[0m12:40:14.771632 [debug] [MainThread]: running dbt with arguments {'warn_error_options': 'WarnErrorOptionsV2(error=[], warn=[], silence=[])', 'send_anonymous_usage_stats': 'True', 'log_path': '/Users/slafell/Documents/_Work_Projects/april_live_demo/dbt/logs', 'write_json': 'True', 'target_path': 'None', 'empty': 'False', 'use_experimental_parser': 'False', 'debug': 'False', 'quiet': 'False', 'fail_fast': 'False', 'log_cache_events': 'False', 'introspect': 'True', 'printer_width': '80', 'partial_parse': 'True', 'use_colors': 'True', 'log_format': 'default', 'profiles_dir': '/Users/slafell/Documents/_Work_Projects/april_live_demo/dbt', 'version_check': 'True', 'no_print': 'None', 'warn_error': 'None', 'static_parser': 'True', 'cache_selected_only': 'False', 'invocation_command': 'dbt run', 'indirect_selection': 'eager'}
+[0m12:40:14.779215 [error] [MainThread]: Encountered an error:
+Parsing Error
+  Env var required but not provided: 'SNOWFLAKE_PRIVATE_KEY_PATH'
+[0m12:40:14.780033 [debug] [MainThread]: Resource report: {"command_name": "run", "command_success": false, "command_wall_clock_time": 0.08913246, "process_in_blocks": "0", "process_kernel_time": 0.563013, "process_mem_max_rss": "141393920", "process_out_blocks": "0", "process_user_time": 1.626589}
+[0m12:40:14.780398 [debug] [MainThread]: Command `dbt run` failed at 12:40:14.780340 after 0.09 seconds
+[0m12:40:14.780605 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'end', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10d9c5480>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10d8cf0b0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10d735e10>]}
+[0m12:40:14.780819 [debug] [MainThread]: Flushing usage events
+[0m12:40:14.936487 [debug] [MainThread]: An error was encountered while trying to flush usage events
+[0m12:40:57.372563 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'start', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10cd30ad0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10ddf3d90>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10ddf3ed0>]}
+
+
+============================== 12:40:57.390958 | 086bfcc3-893a-4b54-9663-6baa8953b329 ==============================
+[0m12:40:57.390958 [info ] [MainThread]: Running with dbt=1.11.7
+[0m12:40:57.391245 [debug] [MainThread]: running dbt with arguments {'fail_fast': 'False', 'log_cache_events': 'False', 'warn_error_options': 'WarnErrorOptionsV2(error=[], warn=[], silence=[])', 'indirect_selection': 'eager', 'printer_width': '80', 'static_parser': 'True', 'invocation_command': 'dbt run', 'use_colors': 'True', 'log_path': '/Users/slafell/Documents/_Work_Projects/april_live_demo/dbt/logs', 'use_experimental_parser': 'False', 'introspect': 'True', 'empty': 'False', 'quiet': 'False', 'write_json': 'True', 'target_path': 'None', 'warn_error': 'None', 'version_check': 'True', 'no_print': 'None', 'debug': 'False', 'send_anonymous_usage_stats': 'True', 'partial_parse': 'True', 'profiles_dir': '/Users/slafell/Documents/_Work_Projects/april_live_demo/dbt', 'log_format': 'default', 'cache_selected_only': 'False'}
+[0m12:40:59.050976 [debug] [MainThread]: Snowflake adapter: Setting snowflake.connector to ERROR (file logging only)
+[0m12:40:59.051258 [debug] [MainThread]: Snowflake adapter: Setting botocore to ERROR (file logging only)
+[0m12:40:59.051419 [debug] [MainThread]: Snowflake adapter: Setting boto3 to ERROR (file logging only)
+[0m12:40:59.155553 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'project_id', 'label': '086bfcc3-893a-4b54-9663-6baa8953b329', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10d108050>]}
+[0m12:40:59.179587 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'adapter_info', 'label': '086bfcc3-893a-4b54-9663-6baa8953b329', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10ed63ac0>]}
+[0m12:40:59.181261 [info ] [MainThread]: Registered adapter: snowflake=1.11.3
+[0m12:40:59.234325 [error] [MainThread]: Encountered an error:
+Compilation Error
+  dbt found 1 package(s) specified in packages.yml, but only 0 package(s) installed in dbt_packages. Run "dbt deps" to install package dependencies.
+[0m12:40:59.235915 [debug] [MainThread]: Resource report: {"command_name": "run", "command_success": false, "command_wall_clock_time": 1.9041704, "process_in_blocks": "0", "process_kernel_time": 0.648378, "process_mem_max_rss": "167624704", "process_out_blocks": "0", "process_user_time": 2.100662}
+[0m12:40:59.236608 [debug] [MainThread]: Command `dbt run` failed at 12:40:59.236528 after 1.90 seconds
+[0m12:40:59.236892 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'end', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10ebdb750>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10ebdbc50>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10ed5af30>]}
+[0m12:40:59.237100 [debug] [MainThread]: Flushing usage events
+[0m12:40:59.361680 [debug] [MainThread]: An error was encountered while trying to flush usage events
+[0m12:41:06.020119 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'start', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x1087c4d70>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10971f750>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10971f9d0>]}
+
+
+============================== 12:41:06.023802 | 88b54e2f-f0c0-42f8-b07d-89f2c3c9bba1 ==============================
+[0m12:41:06.023802 [info ] [MainThread]: Running with dbt=1.11.7
+[0m12:41:06.024172 [debug] [MainThread]: running dbt with arguments {'target_path': 'None', 'empty': 'None', 'cache_selected_only': 'False', 'use_experimental_parser': 'False', 'static_parser': 'True', 'use_colors': 'True', 'invocation_command': 'dbt deps', 'no_print': 'None', 'fail_fast': 'False', 'indirect_selection': 'eager', 'send_anonymous_usage_stats': 'True', 'log_path': '/Users/slafell/Documents/_Work_Projects/april_live_demo/dbt/logs', 'debug': 'False', 'printer_width': '80', 'quiet': 'False', 'warn_error_options': 'WarnErrorOptionsV2(error=[], warn=[], silence=[])', 'introspect': 'True', 'profiles_dir': '/Users/slafell/Documents/_Work_Projects/april_live_demo/dbt', 'version_check': 'True', 'log_format': 'default', 'warn_error': 'None', 'partial_parse': 'True', 'log_cache_events': 'False', 'write_json': 'True'}
+[0m12:41:06.089124 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'project_id', 'label': '88b54e2f-f0c0-42f8-b07d-89f2c3c9bba1', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x108a5c770>]}
+[0m12:41:06.155742 [debug] [MainThread]: Set downloads directory='/var/folders/z5/3m7fhl4n1gbg7rv9c5m6zt700000gn/T/dbt-downloads-v5gxajep'
+[0m12:41:06.156112 [debug] [MainThread]: Making package index registry request: GET https://hub.getdbt.com/api/v1/index.json
+[0m12:41:06.269065 [debug] [MainThread]: Response from registry index: GET https://hub.getdbt.com/api/v1/index.json 200
+[0m12:41:06.269947 [debug] [MainThread]: Making package registry request: GET https://hub.getdbt.com/api/v1/dbt-labs/dbt_utils.json
+[0m12:41:06.337569 [debug] [MainThread]: Response from registry: GET https://hub.getdbt.com/api/v1/dbt-labs/dbt_utils.json 200
+[0m12:41:06.343966 [info ] [MainThread]: Updating lock file in file path: /Users/slafell/Documents/_Work_Projects/april_live_demo/dbt/package-lock.yml
+[0m12:41:06.346367 [debug] [MainThread]: Set downloads directory='/var/folders/z5/3m7fhl4n1gbg7rv9c5m6zt700000gn/T/dbt-downloads-qs2uxkze'
+[0m12:41:06.347676 [info ] [MainThread]: Installing dbt-labs/dbt_utils
+[0m12:41:06.632495 [info ] [MainThread]: Installed from version 1.3.3
+[0m12:41:06.632771 [info ] [MainThread]: Up to date!
+[0m12:41:06.632963 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'package', 'label': '88b54e2f-f0c0-42f8-b07d-89f2c3c9bba1', 'property_': 'install', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10966b240>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10966aad0>]}
+[0m12:41:06.633969 [debug] [MainThread]: Resource report: {"command_name": "deps", "command_success": true, "command_wall_clock_time": 0.6606934, "process_in_blocks": "0", "process_kernel_time": 0.233888, "process_mem_max_rss": "122093568", "process_out_blocks": "0", "process_user_time": 0.759643}
+[0m12:41:06.634286 [debug] [MainThread]: Command `dbt deps` succeeded at 12:41:06.634224 after 0.66 seconds
+[0m12:41:06.634472 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'end', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x109a0c550>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x1095b2c60>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x108faa8a0>]}
+[0m12:41:06.634676 [debug] [MainThread]: Flushing usage events
+[0m12:41:06.724931 [debug] [MainThread]: An error was encountered while trying to flush usage events
+[0m12:41:08.038705 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'start', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10c6a0d70>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10d603750>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10d6039d0>]}
+
+
+============================== 12:41:08.041714 | 9c56c5db-5daf-4caf-a189-080367d50820 ==============================
+[0m12:41:08.041714 [info ] [MainThread]: Running with dbt=1.11.7
+[0m12:41:08.042056 [debug] [MainThread]: running dbt with arguments {'debug': 'False', 'target_path': 'None', 'invocation_command': 'dbt run', 'indirect_selection': 'eager', 'empty': 'False', 'fail_fast': 'False', 'warn_error_options': 'WarnErrorOptionsV2(error=[], warn=[], silence=[])', 'printer_width': '80', 'use_colors': 'True', 'profiles_dir': '/Users/slafell/Documents/_Work_Projects/april_live_demo/dbt', 'warn_error': 'None', 'log_format': 'default', 'version_check': 'True', 'partial_parse': 'True', 'introspect': 'True', 'static_parser': 'True', 'cache_selected_only': 'False', 'quiet': 'False', 'send_anonymous_usage_stats': 'True', 'log_cache_events': 'False', 'write_json': 'True', 'no_print': 'None', 'log_path': '/Users/slafell/Documents/_Work_Projects/april_live_demo/dbt/logs', 'use_experimental_parser': 'False'}
+[0m12:41:08.294783 [debug] [MainThread]: Snowflake adapter: Setting snowflake.connector to ERROR (file logging only)
+[0m12:41:08.295184 [debug] [MainThread]: Snowflake adapter: Setting botocore to ERROR (file logging only)
+[0m12:41:08.295401 [debug] [MainThread]: Snowflake adapter: Setting boto3 to ERROR (file logging only)
+[0m12:41:08.394508 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'project_id', 'label': '9c56c5db-5daf-4caf-a189-080367d50820', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10c938770>]}
+[0m12:41:08.422593 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'adapter_info', 'label': '9c56c5db-5daf-4caf-a189-080367d50820', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10e35bbd0>]}
+[0m12:41:08.423250 [info ] [MainThread]: Registered adapter: snowflake=1.11.3
+[0m12:41:08.496083 [debug] [MainThread]: checksum: b80718358155fc17c3559352095564dd56ada1cc1a1c0ef2e62c857e71583775, vars: {}, profile: , target: , version: 1.11.7
+[0m12:41:08.496830 [info ] [MainThread]: Unable to do partial parsing because saved manifest not found. Starting full parse.
+[0m12:41:08.497043 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'partial_parser', 'label': '9c56c5db-5daf-4caf-a189-080367d50820', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10e399f50>]}
+[0m12:41:09.279580 [warn ] [MainThread]: [[33mWARNING[0m][MissingArgumentsPropertyInGenericTestDeprecation]: Deprecated
+functionality
+Found top-level arguments to test `accepted_values` defined on
+'dt_auth_enriched' in package 'payment_command_center'
+(models/curated/curated.yml). Arguments to generic tests should be nested under
+the `arguments` property.
+[0m12:41:09.279893 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'deprecation', 'label': '9c56c5db-5daf-4caf-a189-080367d50820', 'property_': 'warn', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10e9cb3e0>]}
+[0m12:41:09.374908 [warn ] [MainThread]: [[33mWARNING[0m]: Configuration paths exist in your dbt_project.yml file which do not apply to any resources.
+There are 1 unused configuration paths:
+- models.payment_command_center.staging
+[0m12:41:09.380308 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'load_project', 'label': '9c56c5db-5daf-4caf-a189-080367d50820', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10f8103d0>]}
+[0m12:41:09.436130 [debug] [MainThread]: Wrote artifact WritableManifest to /Users/slafell/Documents/_Work_Projects/april_live_demo/dbt/target/manifest.json
+[0m12:41:09.438202 [debug] [MainThread]: Wrote artifact SemanticManifest to /Users/slafell/Documents/_Work_Projects/april_live_demo/dbt/target/semantic_manifest.json
+[0m12:41:09.463003 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'resource_counts', 'label': '9c56c5db-5daf-4caf-a189-080367d50820', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10f886b60>]}
+[0m12:41:09.463307 [info ] [MainThread]: Found 3 models, 16 data tests, 1 source, 639 macros
+[0m12:41:09.463479 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'runnable_timing', 'label': '9c56c5db-5daf-4caf-a189-080367d50820', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10f93d9d0>]}
+[0m12:41:09.464570 [info ] [MainThread]: 
+[0m12:41:09.464973 [info ] [MainThread]: Concurrency: 4 threads (target='prod')
+[0m12:41:09.465167 [info ] [MainThread]: 
+[0m12:41:09.465425 [debug] [MainThread]: Acquiring new snowflake connection 'master'
+[0m12:41:09.467862 [debug] [ThreadPool]: Acquiring new snowflake connection 'list_PAYMENTS_DB'
+[0m12:41:09.543658 [debug] [ThreadPool]: Using snowflake connection "list_PAYMENTS_DB"
+[0m12:41:09.543931 [debug] [ThreadPool]: On list_PAYMENTS_DB: show terse schemas in database PAYMENTS_DB
+    limit 10000
+/* {"app": "dbt", "dbt_version": "1.11.7", "profile_name": "payment_command_center", "target_name": "prod", "connection_name": "list_PAYMENTS_DB"} */
+[0m12:41:09.544119 [debug] [ThreadPool]: Opening a new connection, currently in state init
+[0m12:41:11.090223 [debug] [ThreadPool]: SQL status: SUCCESS 7 in 1.546 seconds
+[0m12:41:11.091803 [debug] [ThreadPool]: Re-using an available connection from the pool (formerly list_PAYMENTS_DB, now list_PAYMENTS_DB_CURATED_CURATED)
+[0m12:41:11.097775 [debug] [ThreadPool]: Using snowflake connection "list_PAYMENTS_DB_CURATED_CURATED"
+[0m12:41:11.098975 [debug] [ThreadPool]: On list_PAYMENTS_DB_CURATED_CURATED: show objects in PAYMENTS_DB.CURATED_CURATED
+    limit 10000
+    
+
+/* {"app": "dbt", "dbt_version": "1.11.7", "profile_name": "payment_command_center", "target_name": "prod", "connection_name": "list_PAYMENTS_DB_CURATED_CURATED"} */;
+[0m12:41:12.235766 [debug] [ThreadPool]: SQL status: SUCCESS 3 in 1.136 seconds
+[0m12:41:12.237129 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'runnable_timing', 'label': '9c56c5db-5daf-4caf-a189-080367d50820', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10fcaedb0>]}
+[0m12:41:12.241987 [debug] [Thread-2 (]: Began running node model.payment_command_center.dt_auth_enriched
+[0m12:41:12.242336 [info ] [Thread-2 (]: 1 of 3 START sql dynamic_table model CURATED_CURATED.dt_auth_enriched .......... [RUN]
+[0m12:41:12.242580 [debug] [Thread-2 (]: Re-using an available connection from the pool (formerly list_PAYMENTS_DB_CURATED_CURATED, now model.payment_command_center.dt_auth_enriched)
+[0m12:41:12.242738 [debug] [Thread-2 (]: Began compiling node model.payment_command_center.dt_auth_enriched
+[0m12:41:12.246709 [debug] [Thread-2 (]: Writing injected SQL for node "model.payment_command_center.dt_auth_enriched"
+[0m12:41:12.249924 [debug] [Thread-2 (]: Began executing node model.payment_command_center.dt_auth_enriched
+[0m12:41:12.251201 [debug] [Thread-2 (]: Using snowflake connection "model.payment_command_center.dt_auth_enriched"
+[0m12:41:12.251639 [debug] [Thread-2 (]: On model.payment_command_center.dt_auth_enriched: select current_warehouse() as warehouse
+/* {"app": "dbt", "dbt_version": "1.11.7", "profile_name": "payment_command_center", "target_name": "prod", "node_id": "model.payment_command_center.dt_auth_enriched"} */
+[0m12:41:12.417952 [debug] [Thread-2 (]: SQL status: SUCCESS 1 in 0.166 seconds
+[0m12:41:12.418938 [debug] [Thread-2 (]: Using snowflake connection "model.payment_command_center.dt_auth_enriched"
+[0m12:41:12.419146 [debug] [Thread-2 (]: On model.payment_command_center.dt_auth_enriched: use warehouse PAYMENTS_REFRESH_WH
+/* {"app": "dbt", "dbt_version": "1.11.7", "profile_name": "payment_command_center", "target_name": "prod", "node_id": "model.payment_command_center.dt_auth_enriched"} */
+[0m12:41:12.833413 [debug] [Thread-2 (]: SQL status: SUCCESS 1 in 0.414 seconds
+[0m12:41:12.844677 [debug] [Thread-2 (]: Using snowflake connection "model.payment_command_center.dt_auth_enriched"
+[0m12:41:12.844962 [debug] [Thread-2 (]: On model.payment_command_center.dt_auth_enriched: show dynamic tables like 'DT_AUTH_ENRICHED' in schema "PAYMENTS_DB"."CURATED_CURATED"
+/* {"app": "dbt", "dbt_version": "1.11.7", "profile_name": "payment_command_center", "target_name": "prod", "node_id": "model.payment_command_center.dt_auth_enriched"} */
+[0m12:41:14.051667 [debug] [Thread-2 (]: SQL status: SUCCESS 1 in 1.206 seconds
+[0m12:41:14.052541 [warn ] [Thread-2 (]: No configuration changes were identified on: `PAYMENTS_DB.CURATED_CURATED.dt_auth_enriched`. Continuing.
+[0m12:41:14.055429 [debug] [Thread-2 (]: Using snowflake connection "model.payment_command_center.dt_auth_enriched"
+[0m12:41:14.055649 [debug] [Thread-2 (]: On model.payment_command_center.dt_auth_enriched: use warehouse PAYMENTS_ADMIN_WH
+/* {"app": "dbt", "dbt_version": "1.11.7", "profile_name": "payment_command_center", "target_name": "prod", "node_id": "model.payment_command_center.dt_auth_enriched"} */
+[0m12:41:14.278433 [debug] [Thread-2 (]: SQL status: SUCCESS 1 in 0.223 seconds
+[0m12:41:14.281313 [debug] [Thread-2 (]: Sending event: {'category': 'dbt', 'action': 'run_model', 'label': '9c56c5db-5daf-4caf-a189-080367d50820', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10c8bdb30>]}
+[0m12:41:14.281715 [info ] [Thread-2 (]: 1 of 3 OK created sql dynamic_table model CURATED_CURATED.dt_auth_enriched ..... [[32mskip PAYMENTS_DB.CURATED_CURATED.dt_auth_enriched[0m in 2.04s]
+[0m12:41:14.281980 [debug] [Thread-2 (]: Finished running node model.payment_command_center.dt_auth_enriched
+[0m12:41:14.282431 [debug] [Thread-3 (]: Began running node model.payment_command_center.dt_auth_daily
+[0m12:41:14.282684 [debug] [Thread-4 (]: Began running node model.payment_command_center.dt_auth_hourly
+[0m12:41:14.282937 [info ] [Thread-3 (]: 2 of 3 START sql dynamic_table model CURATED_CURATED.dt_auth_daily ............. [RUN]
+[0m12:41:14.283184 [info ] [Thread-4 (]: 3 of 3 START sql dynamic_table model CURATED_CURATED.dt_auth_hourly ............ [RUN]
+[0m12:41:14.283507 [debug] [Thread-3 (]: Acquiring new snowflake connection 'model.payment_command_center.dt_auth_daily'
+[0m12:41:14.283749 [debug] [Thread-4 (]: Acquiring new snowflake connection 'model.payment_command_center.dt_auth_hourly'
+[0m12:41:14.283947 [debug] [Thread-3 (]: Began compiling node model.payment_command_center.dt_auth_daily
+[0m12:41:14.284106 [debug] [Thread-4 (]: Began compiling node model.payment_command_center.dt_auth_hourly
+[0m12:41:14.285760 [debug] [Thread-3 (]: Writing injected SQL for node "model.payment_command_center.dt_auth_daily"
+[0m12:41:14.287408 [debug] [Thread-4 (]: Writing injected SQL for node "model.payment_command_center.dt_auth_hourly"
+[0m12:41:14.288428 [debug] [Thread-3 (]: Began executing node model.payment_command_center.dt_auth_daily
+[0m12:41:14.288603 [debug] [Thread-4 (]: Began executing node model.payment_command_center.dt_auth_hourly
+[0m12:41:14.289616 [debug] [Thread-3 (]: Using snowflake connection "model.payment_command_center.dt_auth_daily"
+[0m12:41:14.290592 [debug] [Thread-4 (]: Using snowflake connection "model.payment_command_center.dt_auth_hourly"
+[0m12:41:14.290779 [debug] [Thread-3 (]: On model.payment_command_center.dt_auth_daily: select current_warehouse() as warehouse
+/* {"app": "dbt", "dbt_version": "1.11.7", "profile_name": "payment_command_center", "target_name": "prod", "node_id": "model.payment_command_center.dt_auth_daily"} */
+[0m12:41:14.290943 [debug] [Thread-4 (]: On model.payment_command_center.dt_auth_hourly: select current_warehouse() as warehouse
+/* {"app": "dbt", "dbt_version": "1.11.7", "profile_name": "payment_command_center", "target_name": "prod", "node_id": "model.payment_command_center.dt_auth_hourly"} */
+[0m12:41:14.291097 [debug] [Thread-3 (]: Opening a new connection, currently in state init
+[0m12:41:14.291263 [debug] [Thread-4 (]: Opening a new connection, currently in state init
+[0m12:41:15.676896 [debug] [Thread-3 (]: SQL status: SUCCESS 1 in 1.386 seconds
+[0m12:41:15.677687 [debug] [Thread-3 (]: Using snowflake connection "model.payment_command_center.dt_auth_daily"
+[0m12:41:15.677879 [debug] [Thread-3 (]: On model.payment_command_center.dt_auth_daily: use warehouse PAYMENTS_REFRESH_WH
+/* {"app": "dbt", "dbt_version": "1.11.7", "profile_name": "payment_command_center", "target_name": "prod", "node_id": "model.payment_command_center.dt_auth_daily"} */
+[0m12:41:15.779445 [debug] [Thread-4 (]: SQL status: SUCCESS 1 in 1.488 seconds
+[0m12:41:15.780985 [debug] [Thread-4 (]: Using snowflake connection "model.payment_command_center.dt_auth_hourly"
+[0m12:41:15.781365 [debug] [Thread-4 (]: On model.payment_command_center.dt_auth_hourly: use warehouse PAYMENTS_REFRESH_WH
+/* {"app": "dbt", "dbt_version": "1.11.7", "profile_name": "payment_command_center", "target_name": "prod", "node_id": "model.payment_command_center.dt_auth_hourly"} */
+[0m12:41:16.145695 [debug] [Thread-4 (]: SQL status: SUCCESS 1 in 0.364 seconds
+[0m12:41:16.146686 [debug] [Thread-4 (]: Using snowflake connection "model.payment_command_center.dt_auth_hourly"
+[0m12:41:16.146912 [debug] [Thread-4 (]: On model.payment_command_center.dt_auth_hourly: show dynamic tables like 'DT_AUTH_HOURLY' in schema "PAYMENTS_DB"."CURATED_CURATED"
+/* {"app": "dbt", "dbt_version": "1.11.7", "profile_name": "payment_command_center", "target_name": "prod", "node_id": "model.payment_command_center.dt_auth_hourly"} */
+[0m12:41:16.154633 [debug] [Thread-3 (]: SQL status: SUCCESS 1 in 0.477 seconds
+[0m12:41:16.155620 [debug] [Thread-3 (]: Using snowflake connection "model.payment_command_center.dt_auth_daily"
+[0m12:41:16.155818 [debug] [Thread-3 (]: On model.payment_command_center.dt_auth_daily: show dynamic tables like 'DT_AUTH_DAILY' in schema "PAYMENTS_DB"."CURATED_CURATED"
+/* {"app": "dbt", "dbt_version": "1.11.7", "profile_name": "payment_command_center", "target_name": "prod", "node_id": "model.payment_command_center.dt_auth_daily"} */
+[0m12:41:16.487873 [debug] [Thread-3 (]: SQL status: SUCCESS 1 in 0.332 seconds
+[0m12:41:16.488711 [warn ] [Thread-3 (]: No configuration changes were identified on: `PAYMENTS_DB.CURATED_CURATED.dt_auth_daily`. Continuing.
+[0m12:41:16.489342 [debug] [Thread-3 (]: Using snowflake connection "model.payment_command_center.dt_auth_daily"
+[0m12:41:16.489517 [debug] [Thread-3 (]: On model.payment_command_center.dt_auth_daily: use warehouse PAYMENTS_ADMIN_WH
+/* {"app": "dbt", "dbt_version": "1.11.7", "profile_name": "payment_command_center", "target_name": "prod", "node_id": "model.payment_command_center.dt_auth_daily"} */
+[0m12:41:17.008467 [debug] [Thread-4 (]: SQL status: SUCCESS 1 in 0.861 seconds
+[0m12:41:17.009303 [warn ] [Thread-4 (]: No configuration changes were identified on: `PAYMENTS_DB.CURATED_CURATED.dt_auth_hourly`. Continuing.
+[0m12:41:17.010006 [debug] [Thread-4 (]: Using snowflake connection "model.payment_command_center.dt_auth_hourly"
+[0m12:41:17.010230 [debug] [Thread-4 (]: On model.payment_command_center.dt_auth_hourly: use warehouse PAYMENTS_ADMIN_WH
+/* {"app": "dbt", "dbt_version": "1.11.7", "profile_name": "payment_command_center", "target_name": "prod", "node_id": "model.payment_command_center.dt_auth_hourly"} */
+[0m12:41:17.253534 [debug] [Thread-3 (]: SQL status: SUCCESS 1 in 0.764 seconds
+[0m12:41:17.254337 [debug] [Thread-3 (]: Sending event: {'category': 'dbt', 'action': 'run_model', 'label': '9c56c5db-5daf-4caf-a189-080367d50820', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10fc4f1d0>]}
+[0m12:41:17.254644 [info ] [Thread-3 (]: 2 of 3 OK created sql dynamic_table model CURATED_CURATED.dt_auth_daily ........ [[32mskip PAYMENTS_DB.CURATED_CURATED.dt_auth_daily[0m in 2.97s]
+[0m12:41:17.254916 [debug] [Thread-3 (]: Finished running node model.payment_command_center.dt_auth_daily
+[0m12:41:17.374269 [debug] [Thread-4 (]: SQL status: SUCCESS 1 in 0.364 seconds
+[0m12:41:17.375074 [debug] [Thread-4 (]: Sending event: {'category': 'dbt', 'action': 'run_model', 'label': '9c56c5db-5daf-4caf-a189-080367d50820', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x11608c440>]}
+[0m12:41:17.375410 [info ] [Thread-4 (]: 3 of 3 OK created sql dynamic_table model CURATED_CURATED.dt_auth_hourly ....... [[32mskip PAYMENTS_DB.CURATED_CURATED.dt_auth_hourly[0m in 3.09s]
+[0m12:41:17.375674 [debug] [Thread-4 (]: Finished running node model.payment_command_center.dt_auth_hourly
+[0m12:41:17.376406 [debug] [MainThread]: Connection 'master' was properly closed.
+[0m12:41:17.376612 [debug] [MainThread]: Connection 'model.payment_command_center.dt_auth_enriched' was left open.
+[0m12:41:17.376765 [debug] [MainThread]: On model.payment_command_center.dt_auth_enriched: Close
+[0m12:41:17.707720 [debug] [MainThread]: Connection 'model.payment_command_center.dt_auth_daily' was left open.
+[0m12:41:17.707993 [debug] [MainThread]: On model.payment_command_center.dt_auth_daily: Close
+[0m12:41:18.017714 [debug] [MainThread]: Connection 'model.payment_command_center.dt_auth_hourly' was left open.
+[0m12:41:18.017980 [debug] [MainThread]: On model.payment_command_center.dt_auth_hourly: Close
+[0m12:41:18.316188 [info ] [MainThread]: 
+[0m12:41:18.316498 [info ] [MainThread]: Finished running 3 dynamic table models in 0 hours 0 minutes and 8.85 seconds (8.85s).
+[0m12:41:18.316931 [debug] [MainThread]: Command end result
+[0m12:41:18.329736 [debug] [MainThread]: Wrote artifact WritableManifest to /Users/slafell/Documents/_Work_Projects/april_live_demo/dbt/target/manifest.json
+[0m12:41:18.330896 [debug] [MainThread]: Wrote artifact SemanticManifest to /Users/slafell/Documents/_Work_Projects/april_live_demo/dbt/target/semantic_manifest.json
+[0m12:41:18.333849 [debug] [MainThread]: Wrote artifact RunExecutionResult to /Users/slafell/Documents/_Work_Projects/april_live_demo/dbt/target/run_results.json
+[0m12:41:18.334020 [info ] [MainThread]: 
+[0m12:41:18.334197 [info ] [MainThread]: [32mCompleted successfully[0m
+[0m12:41:18.334329 [info ] [MainThread]: 
+[0m12:41:18.334528 [info ] [MainThread]: Done. PASS=3 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=3
+[0m12:41:18.334841 [warn ] [MainThread]: [[33mWARNING[0m][DeprecationsSummary]: Deprecated functionality
+Summary of encountered deprecations:
+- MissingArgumentsPropertyInGenericTestDeprecation: 4 occurrences
+To see all deprecation instances instead of just the first occurrence of each,
+run command again with the `--show-all-deprecations` flag. You may also need to
+run with `--no-partial-parse` as some deprecations are only encountered during
+parsing.
+[0m12:41:18.335192 [debug] [MainThread]: Resource report: {"command_name": "run", "command_success": true, "command_wall_clock_time": 10.342821, "process_in_blocks": "0", "process_kernel_time": 0.430973, "process_mem_max_rss": "185221120", "process_out_blocks": "0", "process_user_time": 3.35991}
+[0m12:41:18.335444 [debug] [MainThread]: Command `dbt run` succeeded at 12:41:18.335401 after 10.34 seconds
+[0m12:41:18.335645 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'end', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10d607b90>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x1160fb950>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x1160fbe90>]}
+[0m12:41:18.335831 [debug] [MainThread]: Flushing usage events
+[0m12:41:18.424192 [debug] [MainThread]: An error was encountered while trying to flush usage events
+[0m10:43:02.186525 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'start', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10c574d70>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10d7039d0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10d703b10>]}
+
+
+============================== 10:43:02.206472 | 8485cefe-d409-4864-87aa-8763aef81c21 ==============================
+[0m10:43:02.206472 [info ] [MainThread]: Running with dbt=1.11.8
+[0m10:43:02.206770 [debug] [MainThread]: running dbt with arguments {'introspect': 'True', 'fail_fast': 'False', 'invocation_command': 'dbt run --select curated', 'indirect_selection': 'eager', 'log_format': 'default', 'empty': 'False', 'cache_selected_only': 'False', 'profiles_dir': '/Users/slafell/Documents/_Work_Projects/april_live_demo/dbt', 'use_experimental_parser': 'False', 'version_check': 'True', 'warn_error_options': 'WarnErrorOptionsV2(error=[], warn=[], silence=[])', 'partial_parse': 'True', 'debug': 'False', 'target_path': 'None', 'log_cache_events': 'False', 'log_path': '/Users/slafell/Documents/_Work_Projects/april_live_demo/dbt/logs', 'no_print': 'None', 'printer_width': '80', 'use_colors': 'True', 'quiet': 'False', 'warn_error': 'None', 'write_json': 'True', 'send_anonymous_usage_stats': 'True', 'static_parser': 'True'}
+[0m10:43:02.214224 [error] [MainThread]: Encountered an error:
+Parsing Error
+  Env var required but not provided: 'SNOWFLAKE_PRIVATE_KEY_PATH'
+[0m10:43:02.214563 [debug] [MainThread]: Resource report: {"command_name": "run", "command_success": false, "command_wall_clock_time": 0.07851446, "process_in_blocks": "0", "process_kernel_time": 0.433326, "process_mem_max_rss": "141082624", "process_out_blocks": "0", "process_user_time": 1.442356}
+[0m10:43:02.214768 [debug] [MainThread]: Command `dbt run` failed at 10:43:02.214722 after 0.08 seconds
+[0m10:43:02.214920 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'end', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10d725810>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10d6ca570>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x10d5939b0>]}
+[0m10:43:02.215076 [debug] [MainThread]: Flushing usage events
+[0m10:43:02.359679 [debug] [MainThread]: An error was encountered while trying to flush usage events

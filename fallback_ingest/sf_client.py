@@ -10,6 +10,7 @@ from snowflake.connector.pandas_tools import write_pandas
 from config import (
     SNOWFLAKE_ACCOUNT,
     SNOWFLAKE_DATABASE,
+    SNOWFLAKE_PRIVATE_KEY,
     SNOWFLAKE_PRIVATE_KEY_PATH,
     SNOWFLAKE_ROLE,
     SNOWFLAKE_SCHEMA,
@@ -47,19 +48,33 @@ COLUMNS = [
 
 
 def _load_private_key() -> bytes:
-    """Load PEM private key for key_pair auth."""
-    from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.backends import default_backend
+    """Load the private key as DER bytes.
 
-    key_path = Path(SNOWFLAKE_PRIVATE_KEY_PATH)
-    with open(key_path, "rb") as f:
-        private_key = serialization.load_pem_private_key(
-            f.read(), password=None, backend=default_backend()
+    Prefers SNOWFLAKE_PRIVATE_KEY (base64-encoded DER, same format as the V4
+    Kafka connector's .env).  Falls back to SNOWFLAKE_PRIVATE_KEY_PATH (PEM
+    file) for local dev outside Docker.
+    """
+    if SNOWFLAKE_PRIVATE_KEY:
+        import base64
+        return base64.b64decode(SNOWFLAKE_PRIVATE_KEY)
+
+    if SNOWFLAKE_PRIVATE_KEY_PATH:
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.backends import default_backend
+        key_path = Path(SNOWFLAKE_PRIVATE_KEY_PATH)
+        with open(key_path, "rb") as f:
+            private_key = serialization.load_pem_private_key(
+                f.read(), password=None, backend=default_backend()
+            )
+        return private_key.private_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
         )
-    return private_key.private_bytes(
-        encoding=serialization.Encoding.DER,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
+
+    raise ValueError(
+        "No private key configured. Set SNOWFLAKE_PRIVATE_KEY (base64 DER) "
+        "or SNOWFLAKE_PRIVATE_KEY_PATH (PEM file path)."
     )
 
 

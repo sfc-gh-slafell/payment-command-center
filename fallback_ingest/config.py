@@ -14,6 +14,10 @@ BATCH_TIMEOUT = float(os.getenv("BATCH_TIMEOUT", "5.0"))
 # Snowflake connection
 SNOWFLAKE_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT", "")
 SNOWFLAKE_USER = os.getenv("SNOWFLAKE_USER", "")
+# Accept the key either as a base64-encoded DER string (SNOWFLAKE_PRIVATE_KEY,
+# matching the V4 Kafka connector's .env format) or as a PEM file path
+# (SNOWFLAKE_PRIVATE_KEY_PATH, for local dev outside Docker).
+SNOWFLAKE_PRIVATE_KEY = os.getenv("SNOWFLAKE_PRIVATE_KEY", "")
 SNOWFLAKE_PRIVATE_KEY_PATH = os.getenv("SNOWFLAKE_PRIVATE_KEY_PATH", "")
 SNOWFLAKE_DATABASE = os.getenv("SNOWFLAKE_DATABASE", "PAYMENTS_DB")
 SNOWFLAKE_SCHEMA = os.getenv("SNOWFLAKE_SCHEMA", "RAW")

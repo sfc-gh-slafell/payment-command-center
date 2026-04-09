@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from config import TOPIC, V3_TOPIC, DEFAULT_RATE, DEFAULT_ENV
+from config import TOPIC, DEFAULT_RATE, DEFAULT_ENV
 from producer import create_producer, generate_event
 from scenarios import SCENARIOS, Baseline
 
@@ -59,8 +59,7 @@ async def producer_loop():
       calling generate_event() (uuid4 + random choices) on every event.
     - Stamp event_ts once per tick (not per event) — 100 ms resolution is
       finer than the 1-second dashboard bucket so accuracy is unaffected.
-    - Serialize JSON once and reuse the bytes for both topic.produce() calls,
-      eliminating the redundant json.dumps() that previously doubled CPU cost.
+    - Serialize JSON once and reuse the bytes for the topic.produce() call.
     """
     global _pool_idx
     producer = state["producer"]
@@ -77,12 +76,10 @@ async def producer_loop():
             key = event["merchant_id"]
             try:
                 producer.produce(topic=TOPIC, key=key, value=value)
-                producer.produce(topic=V3_TOPIC, key=key, value=value)
             except BufferError:
                 # Queue full — drain delivery callbacks and retry once
                 producer.poll(1.0)
                 producer.produce(topic=TOPIC, key=key, value=value)
-                producer.produce(topic=V3_TOPIC, key=key, value=value)
         producer.poll(0)
         state["event_count"] += batch_size
         await asyncio.sleep(1.0 / _TICK_HZ)

@@ -6,6 +6,7 @@ sources:
     schema: RAW
     tables:
       - name: AUTH_EVENTS_RAW
+        identifier: AUTH_EVENTS_RAW_V4
         description: "Raw payment authorization events from Kafka HP connector"
         columns:
           - name: env

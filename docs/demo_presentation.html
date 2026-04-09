@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Payment Command Center — Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0e17;--bg2:#0f1420;--bg3:#141a2a;
+  --surface:#1a2136;--surface2:#1e2740;
+  --cyan:#00e5ff;--cyan-dim:#00e5ff44;--cyan-glow:#00e5ff22;
+  --amber:#ffab00;--amber-dim:#ffab0044;
+  --green:#00e676;--green-dim:#00e67644;
+  --red:#ff5252;--red-dim:#ff525244;
+  --purple:#b388ff;--purple-dim:#b388ff44;
+  --text:#e8eaf6;--text2:#9fa8c7;--text3:#5c6688;
+  --mono:'JetBrains Mono',monospace;
+  --sans:'Outfit',sans-serif;
+  --border:#ffffff0a;
+}
+html{scroll-behavior:smooth;scroll-snap-type:y mandatory;font-size:16px}
+body{
+  background:var(--bg);color:var(--text);
+  font-family:var(--sans);line-height:1.6;
+  overflow-x:hidden;
+}
+body::after{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  background-repeat:repeat;background-size:256px 256px;opacity:.4;
+}
+::selection{background:var(--cyan);color:var(--bg)}
+
+/* ─── SLIDES ─── */
+.slide{
+  min-height:100vh;scroll-snap-align:start;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  position:relative;padding:3rem 4rem;
+}
+
+/* ─── NAV DOTS ─── */
+.nav{
+  position:fixed;right:2rem;top:50%;transform:translateY(-50%);
+  display:flex;flex-direction:column;gap:1rem;z-index:100;
+}
+.nav a{
+  width:12px;height:12px;border-radius:50%;
+  border:2px solid var(--text3);background:transparent;
+  transition:all .3s ease;text-decoration:none;
+}
+.nav a:hover,.nav a.active{background:var(--cyan);border-color:var(--cyan)}
+
+/* ─── SLIDE 1: TITLE ─── */
+.title-badge{
+  font-family:var(--mono);font-size:.85rem;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--cyan);
+  border:1px solid var(--cyan-dim);border-radius:100px;
+  padding:.5rem 1.5rem;margin-bottom:2.5rem;
+}
+.title-main{
+  font-size:clamp(3rem,7vw,6rem);font-weight:800;
+  letter-spacing:-.03em;line-height:1.05;text-align:center;
+  background:linear-gradient(135deg,var(--text) 0%,var(--cyan) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;max-width:1000px;
+}
+.title-sub{
+  font-size:1.4rem;color:var(--text2);margin-top:1.5rem;text-align:center;
+  font-weight:300;
+}
+.stats-row{
+  display:flex;gap:4rem;margin-top:3.5rem;
+}
+.stat{text-align:center}
+.stat-val{font-family:var(--mono);font-size:2.4rem;font-weight:600}
+.stat-val.cyan{color:var(--cyan)}
+.stat-val.amber{color:var(--amber)}
+.stat-val.green{color:var(--green)}
+.stat-label{
+  font-size:.8rem;color:var(--text3);text-transform:uppercase;
+  letter-spacing:.1em;margin-top:.3rem;
+}
+
+/* ─── SLIDE 2: ARCHITECTURE ─── */
+.arch-title{
+  font-size:2rem;font-weight:600;margin-bottom:3rem;
+  color:var(--text);letter-spacing:-.02em;
+}
+.pipeline{
+  display:flex;align-items:center;gap:0;flex-wrap:nowrap;
+}
+.pipe-node{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:1.2rem 1.8rem;text-align:center;
+  min-width:140px;position:relative;
+}
+.pipe-node .node-icon{font-size:2rem;margin-bottom:.4rem}
+.pipe-node .node-name{font-size:1rem;font-weight:600;white-space:nowrap}
+.pipe-node .node-detail{font-size:.75rem;color:var(--text3);margin-top:.2rem;font-family:var(--mono)}
+.pipe-arrow{
+  display:flex;flex-direction:column;align-items:center;
+  padding:0 .6rem;color:var(--cyan);
+}
+.pipe-arrow .arrow-line{font-size:1.4rem;line-height:1}
+.pipe-arrow .arrow-latency{
+  font-size:.65rem;font-family:var(--mono);color:var(--amber);
+  margin-top:.2rem;white-space:nowrap;
+}
+.pipe-node.highlight{border-color:var(--cyan);box-shadow:0 0 20px var(--cyan-glow)}
+
+/* ─── SLIDE 3: DEMO FLOW ─── */
+.flow-title{font-size:2rem;font-weight:600;margin-bottom:3rem}
+.timeline{display:flex;align-items:flex-start;gap:0;position:relative}
+.timeline::before{
+  content:'';position:absolute;top:28px;left:40px;right:40px;
+  height:3px;background:var(--surface2);border-radius:2px;
+}
+.step{
+  display:flex;flex-direction:column;align-items:center;
+  flex:1;position:relative;z-index:1;padding:0 .5rem;
+}
+.step-dot{
+  width:56px;height:56px;border-radius:50%;
+  background:var(--surface);border:3px solid var(--text3);
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.5rem;margin-bottom:1rem;transition:all .4s ease;
+}
+.step.active .step-dot{
+  border-color:var(--cyan);background:var(--cyan-dim);
+  box-shadow:0 0 30px var(--cyan-glow);transform:scale(1.15);
+}
+.step-label{
+  font-size:1.1rem;font-weight:600;text-align:center;
+  margin-bottom:.3rem;
+}
+.step-desc{
+  font-size:.85rem;color:var(--text2);text-align:center;
+  max-width:160px;
+}
+.step.active .step-label{color:var(--cyan)}
+.flow-hint{
+  margin-top:3rem;font-size:.9rem;color:var(--text3);
+  font-family:var(--mono);
+}
+
+/* ─── SLIDE 4: SCENARIOS ─── */
+.scenarios-title{font-size:2rem;font-weight:600;margin-bottom:2.5rem}
+.scenario-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:2rem;
+  max-width:1100px;width:100%;
+}
+.scenario-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:16px;padding:2rem 2.5rem;
+}
+.scenario-card.red{border-left:4px solid var(--red)}
+.scenario-card.amber{border-left:4px solid var(--amber)}
+.scenario-card .sc-icon{font-size:2.5rem;margin-bottom:.8rem}
+.scenario-card .sc-name{font-size:1.4rem;font-weight:700;margin-bottom:.5rem}
+.scenario-card .sc-trigger{
+  font-family:var(--mono);font-size:.8rem;color:var(--text3);
+  margin-bottom:1rem;
+}
+.scenario-card .sc-metrics{display:flex;gap:2rem;margin-bottom:1.2rem}
+.sc-metric{text-align:center}
+.sc-metric .val{font-family:var(--mono);font-size:1.6rem;font-weight:600}
+.sc-metric .val.red{color:var(--red)}
+.sc-metric .val.amber{color:var(--amber)}
+.sc-metric .lbl{font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.08em}
+.scenario-card .sc-watch{
+  font-size:.9rem;color:var(--text2);padding-top:.8rem;
+  border-top:1px solid var(--border);
+}
+.sc-watch strong{color:var(--cyan)}
+
+/* ─── SLIDE 5: METRICS ─── */
+.metrics-title{font-size:2rem;font-weight:600;margin-bottom:2.5rem}
+.metrics-table{
+  border-collapse:collapse;width:100%;max-width:900px;
+  font-size:1.1rem;
+}
+.metrics-table th{
+  font-family:var(--mono);font-size:.8rem;text-transform:uppercase;
+  letter-spacing:.1em;color:var(--text3);padding:1rem 1.5rem;
+  border-bottom:2px solid var(--surface2);text-align:left;
+}
+.metrics-table td{
+  padding:.8rem 1.5rem;border-bottom:1px solid var(--border);
+  font-family:var(--mono);font-size:1rem;
+}
+.metrics-table tr:hover td{background:var(--surface)}
+.metrics-table .metric-name{font-family:var(--sans);font-weight:500;color:var(--text)}
+.metrics-table .baseline{color:var(--green)}
+.metrics-table .degraded{color:var(--red)}
+.metrics-table .neutral{color:var(--text2)}
+.tech-stack{
+  display:flex;gap:1rem;margin-top:3rem;flex-wrap:wrap;justify-content:center;
+}
+.tech-badge{
+  font-family:var(--mono);font-size:.8rem;
+  padding:.5rem 1.2rem;border-radius:100px;
+  border:1px solid var(--border);color:var(--text2);
+  background:var(--surface);
+}
+.tech-badge.primary{border-color:var(--cyan-dim);color:var(--cyan)}
+
+/* ─── KEYBOARD HINTS ─── */
+.kb-hint{
+  position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);
+  font-family:var(--mono);font-size:.7rem;color:var(--text3);
+  z-index:100;letter-spacing:.05em;
+}
+kbd{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:4px;padding:.15rem .4rem;margin:0 .15rem;
+}
+
+@media(max-width:900px){
+  .pipeline{flex-wrap:wrap;justify-content:center;gap:1rem}
+  .pipe-arrow{display:none}
+  .scenario-grid{grid-template-columns:1fr}
+  .stats-row{gap:2rem}
+  .timeline{flex-wrap:wrap;justify-content:center;gap:1.5rem}
+  .timeline::before{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- NAV DOTS -->
+<nav class="nav">
+  <a href="#title" title="Title"></a>
+  <a href="#arch" title="Architecture"></a>
+  <a href="#flow" title="Demo Flow"></a>
+  <a href="#scenarios" title="Scenarios"></a>
+  <a href="#metrics" title="Metrics"></a>
+</nav>
+
+<!-- SLIDE 1: TITLE -->
+<section class="slide" id="title">
+  <div class="title-badge">Live Demo</div>
+  <h1 class="title-main">Payment Command Center</h1>
+  <p class="title-sub">Real-Time Auth Monitoring with Snowflake + Kafka</p>
+  <div class="stats-row">
+    <div class="stat">
+      <div class="stat-val cyan">~65s</div>
+      <div class="stat-label">End-to-End</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val amber">500</div>
+      <div class="stat-label">Events / sec</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val green">5-10s</div>
+      <div class="stat-label">Ingest Latency</div>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 2: ARCHITECTURE -->
+<section class="slide" id="arch">
+  <div class="arch-title">Data Pipeline Architecture</div>
+  <div class="pipeline">
+    <div class="pipe-node">
+      <div class="node-icon">&#9881;</div>
+      <div class="node-name">Generator</div>
+      <div class="node-detail">Python</div>
+    </div>
+    <div class="pipe-arrow">
+      <div class="arrow-line">&#10132;</div>
+      <div class="arrow-latency">&lt;1ms</div>
+    </div>
+    <div class="pipe-node">
+      <div class="node-icon">&#9889;</div>
+      <div class="node-name">Kafka</div>
+      <div class="node-detail">24 partitions</div>
+    </div>
+    <div class="pipe-arrow">
+      <div class="arrow-line">&#10132;</div>
+      <div class="arrow-latency">5-10s</div>
+    </div>
+    <div class="pipe-node highlight">
+      <div class="node-icon">&#9971;</div>
+      <div class="node-name">HP Connector v4</div>
+      <div class="node-detail">Snowpipe Streaming</div>
+    </div>
+    <div class="pipe-arrow">
+      <div class="arrow-line">&#10132;</div>
+      <div class="arrow-latency">~0s</div>
+    </div>
+    <div class="pipe-node">
+      <div class="node-icon">&#10052;</div>
+      <div class="node-name">Snowflake RAW</div>
+      <div class="node-detail">AUTH_EVENTS_RAW</div>
+    </div>
+    <div class="pipe-arrow">
+      <div class="arrow-line">&#10132;</div>
+      <div class="arrow-latency">60s</div>
+    </div>
+    <div class="pipe-node">
+      <div class="node-icon">&#9201;</div>
+      <div class="node-name">Interactive Tables</div>
+      <div class="node-detail">SERVE schema</div>
+    </div>
+    <div class="pipe-arrow">
+      <div class="arrow-line">&#10132;</div>
+      <div class="arrow-latency">&lt;1s</div>
+    </div>
+    <div class="pipe-node">
+      <div class="node-icon">&#128640;</div>
+      <div class="node-name">FastAPI + React</div>
+      <div class="node-detail">SPCS</div>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 3: DEMO FLOW -->
+<section class="slide" id="flow">
+  <div class="flow-title">Demo Flow</div>
+  <div class="timeline">
+    <div class="step active" data-step="1">
+      <div class="step-dot">1</div>
+      <div class="step-label">Baseline</div>
+      <div class="step-desc">Steady state ~95% approval</div>
+    </div>
+    <div class="step" data-step="2">
+      <div class="step-dot">2</div>
+      <div class="step-label">Issuer Outage</div>
+      <div class="step-desc">BIN 4111xx drops to 10% approval</div>
+    </div>
+    <div class="step" data-step="3">
+      <div class="step-dot">3</div>
+      <div class="step-label">Recovery</div>
+      <div class="step-desc">Watch metrics return to baseline</div>
+    </div>
+    <div class="step" data-step="4">
+      <div class="step-dot">4</div>
+      <div class="step-label">Latency Spike</div>
+      <div class="step-desc">EU region 800-2000ms</div>
+    </div>
+    <div class="step" data-step="5">
+      <div class="step-dot">5</div>
+      <div class="step-label">Recovery</div>
+      <div class="step-desc">Return to normal latency</div>
+    </div>
+  </div>
+  <div class="flow-hint">Click a step to highlight it &middot; Press <kbd>1</kbd>-<kbd>5</kbd> to jump</div>
+</section>
+
+<!-- SLIDE 4: SCENARIOS -->
+<section class="slide" id="scenarios">
+  <div class="scenarios-title">Scenario Details</div>
+  <div class="scenario-grid">
+    <div class="scenario-card red">
+      <div class="sc-icon">&#128680;</div>
+      <div class="sc-name">Issuer Outage</div>
+      <div class="sc-trigger">POST /scenario &middot; profile: issuer_outage &middot; 5 min</div>
+      <div class="sc-metrics">
+        <div class="sc-metric">
+          <div class="val red">~55%</div>
+          <div class="lbl">Approval Rate</div>
+        </div>
+        <div class="sc-metric">
+          <div class="val red">~45%</div>
+          <div class="lbl">Decline Rate</div>
+        </div>
+      </div>
+      <div class="sc-watch"><strong>Watch:</strong> KPI strip turns red &middot; ISSUER_UNAVAILABLE in Recent Failures &middot; VISA BINs lead declines</div>
+    </div>
+    <div class="scenario-card amber">
+      <div class="sc-icon">&#9203;</div>
+      <div class="sc-name">Latency Spike</div>
+      <div class="sc-trigger">POST /scenario &middot; profile: latency_spike &middot; 5 min</div>
+      <div class="sc-metrics">
+        <div class="sc-metric">
+          <div class="val amber">800ms+</div>
+          <div class="lbl">Avg Latency</div>
+        </div>
+        <div class="sc-metric">
+          <div class="val amber">~1500ms</div>
+          <div class="lbl">p95 Latency</div>
+        </div>
+      </div>
+      <div class="sc-watch"><strong>Watch:</strong> Histogram shifts right &middot; EU region leads breakdown &middot; Latency KPI turns red</div>
+    </div>
+    <div class="scenario-card red">
+      <div class="sc-icon">&#127978;</div>
+      <div class="sc-name">Merchant Decline Spike</div>
+      <div class="sc-trigger">POST /scenario &middot; profile: merchant_decline_spike &middot; 5 min</div>
+      <div class="sc-metrics">
+        <div class="sc-metric">
+          <div class="val red">~60%</div>
+          <div class="lbl">M0003 Decline Rate</div>
+        </div>
+      </div>
+      <div class="sc-watch"><strong>Watch:</strong> TechBazaar tops breakdown table &middot; DO_NOT_HONOR floods Recent Failures</div>
+    </div>
+    <div class="scenario-card amber">
+      <div class="sc-icon">&#128200;</div>
+      <div class="sc-name">Event Rate Ramp</div>
+      <div class="sc-trigger">POST /rate &middot; events_per_sec: 2000</div>
+      <div class="sc-metrics">
+        <div class="sc-metric">
+          <div class="val amber">4x</div>
+          <div class="lbl">Event Throughput</div>
+        </div>
+      </div>
+      <div class="sc-watch"><strong>Watch:</strong> Event count spikes in KPI strip &middot; Pipeline handles load without lag increase</div>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 5: METRICS -->
+<section class="slide" id="metrics">
+  <div class="metrics-title">Key Metrics Reference</div>
+  <table class="metrics-table">
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th>Baseline</th>
+        <th>Issuer Outage</th>
+        <th>Latency Spike</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="metric-name">Approval Rate</td>
+        <td class="baseline">~95%</td>
+        <td class="degraded">~55-60%</td>
+        <td class="baseline">~95%</td>
+      </tr>
+      <tr>
+        <td class="metric-name">Decline Rate</td>
+        <td class="baseline">~5%</td>
+        <td class="degraded">~40-45%</td>
+        <td class="baseline">~5%</td>
+      </tr>
+      <tr>
+        <td class="metric-name">Avg Latency</td>
+        <td class="baseline">50-150ms</td>
+        <td class="neutral">50-150ms</td>
+        <td class="degraded">200-800ms</td>
+      </tr>
+      <tr>
+        <td class="metric-name">p95 Latency</td>
+        <td class="baseline">~200ms</td>
+        <td class="neutral">~200ms</td>
+        <td class="degraded">~1500ms</td>
+      </tr>
+      <tr>
+        <td class="metric-name">Raw Freshness</td>
+        <td class="baseline">seconds</td>
+        <td class="baseline">seconds</td>
+        <td class="baseline">seconds</td>
+      </tr>
+      <tr>
+        <td class="metric-name">Serving Freshness</td>
+        <td class="baseline">&lt;60s</td>
+        <td class="baseline">&lt;60s</td>
+        <td class="baseline">&lt;60s</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="tech-stack">
+    <span class="tech-badge primary">Snowflake</span>
+    <span class="tech-badge primary">Kafka</span>
+    <span class="tech-badge primary">HP Connector v4</span>
+    <span class="tech-badge">FastAPI</span>
+    <span class="tech-badge">React</span>
+    <span class="tech-badge">SPCS</span>
+    <span class="tech-badge">dbt</span>
+    <span class="tech-badge">Docker</span>
+  </div>
+</section>
+
+<div class="kb-hint">Scroll or use <kbd>&#8595;</kbd> <kbd>&#8593;</kbd> to navigate slides</div>
+
+<script>
+// Nav dot active state
+const dots = document.querySelectorAll('.nav a');
+const slides = document.querySelectorAll('.slide');
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      dots.forEach(d => d.classList.remove('active'));
+      const idx = [...slides].indexOf(e.target);
+      if (dots[idx]) dots[idx].classList.add('active');
+    }
+  });
+}, { threshold: 0.6 });
+slides.forEach(s => observer.observe(s));
+
+// Timeline step clicking
+document.querySelectorAll('.step').forEach(step => {
+  step.style.cursor = 'pointer';
+  step.addEventListener('click', () => {
+    document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+    step.classList.add('active');
+  });
+});
+
+// Keyboard shortcuts: 1-5 to highlight demo steps
+document.addEventListener('keydown', e => {
+  const n = parseInt(e.key);
+  if (n >= 1 && n <= 5) {
+    document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+    const target = document.querySelector(`.step[data-step="${n}"]`);
+    if (target) {
+      target.classList.add('active');
+      // Also scroll to flow slide
+      document.getElementById('flow').scrollIntoView({ behavior: 'smooth' });
+    }
+  }
+});
+</script>
+</body>
+</html>

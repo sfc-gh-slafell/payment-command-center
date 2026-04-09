@@ -8,7 +8,7 @@ WITH current_period AS (
         SUM(decline_count) * 100.0 / NULLIF(SUM(event_count), 0) AS decline_rate,
         SUM(latency_sum_ms) / NULLIF(SUM(latency_count), 0)   AS avg_latency_ms
     FROM PAYMENTS_DB.SERVE.IT_AUTH_MINUTE_METRICS
-    WHERE event_minute >= DATEADD('MINUTE', -%(time_range_minutes)s, CURRENT_TIMESTAMP())
+    WHERE event_minute >= DATEADD('MINUTE', -%(time_range_minutes)s, SYSDATE())
       AND (%(env)s IS NULL OR env = %(env)s)
     GROUP BY %(dimension)s
 ),
@@ -19,8 +19,8 @@ previous_period AS (
         SUM(decline_count) * 100.0 / NULLIF(SUM(event_count), 0) AS decline_rate,
         SUM(latency_sum_ms) / NULLIF(SUM(latency_count), 0)   AS avg_latency_ms
     FROM PAYMENTS_DB.SERVE.IT_AUTH_MINUTE_METRICS
-    WHERE event_minute >= DATEADD('MINUTE', -(%(time_range_minutes)s * 2), CURRENT_TIMESTAMP())
-      AND event_minute < DATEADD('MINUTE', -%(time_range_minutes)s, CURRENT_TIMESTAMP())
+    WHERE event_minute >= DATEADD('MINUTE', -(%(time_range_minutes)s * 2), SYSDATE())
+      AND event_minute < DATEADD('MINUTE', -%(time_range_minutes)s, SYSDATE())
       AND (%(env)s IS NULL OR env = %(env)s)
     GROUP BY %(dimension)s
 )

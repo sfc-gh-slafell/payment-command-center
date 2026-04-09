@@ -69,7 +69,7 @@ SELECT
     SUM(amount)                             AS total_amount,
     AVG(amount)                             AS avg_amount
 FROM PAYMENTS_DB.RAW.AUTH_EVENTS_RAW_V4
-WHERE event_ts >= DATEADD('HOUR', -2, CURRENT_TIMESTAMP())
+WHERE event_ts >= DATEADD('HOUR', -2, SYSDATE())
 GROUP BY ALL;
 
 
@@ -113,5 +113,5 @@ SELECT
     decline_code,
     auth_latency_ms
 FROM PAYMENTS_DB.RAW.AUTH_EVENTS_RAW_V4
-WHERE event_ts >= DATEADD('MINUTE', -60, CURRENT_TIMESTAMP())
+WHERE event_ts >= DATEADD('MINUTE', -60, SYSDATE())
 ORDER BY event_ts DESC;

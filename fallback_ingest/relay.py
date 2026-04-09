@@ -24,7 +24,7 @@ def create_consumer() -> Consumer:
         {
             "bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS,
             "group.id": KAFKA_GROUP_ID,
-            "auto.offset.reset": "earliest",
+            "auto.offset.reset": "latest",
             "enable.auto.commit": False,
             # Message size limits aligned with broker (10 MB)
             "fetch.max.bytes": 10485760,

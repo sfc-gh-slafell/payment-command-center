@@ -49,9 +49,6 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 \
           --create --if-not-exists \
           --topic payments.auth --partitions 48 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 \
-          --create --if-not-exists \
-          --topic payments.auth.v3 --partitions 48 --replication-factor 1
         echo "Topics ready."
     restart: "no"
 
@@ -92,35 +89,30 @@ services:
       kafka-init:
         condition: service_completed_successfully
 
-  kafka-connect-v3:
+  # ---------------------------------------------------------------------------
+  # Fallback relay — Python consumer writing to AUTH_EVENTS_RAW via write_pandas.
+  # Dormant by default (profiles: [fallback]).  Start manually for the
+  # resilience demo:  docker compose --profile fallback up -d fallback-relay
+  # ---------------------------------------------------------------------------
+  fallback-relay:
     build:
-      context: kafka-connect-v3
+      context: fallback_ingest
       dockerfile: Dockerfile
-    container_name: payments-kafka-connect-v3
-    ports:
-      - "8084:8083"
+    container_name: payments-fallback-relay
+    profiles: [fallback]
     environment:
-      CONNECT_BOOTSTRAP_SERVERS: "kafka:29092"
-      CONNECT_REST_ADVERTISED_HOST_NAME: "kafka-connect-v3"
-      CONNECT_REST_PORT: 8083
-      # Separate consumer group from V4 HP connector cluster
-      CONNECT_GROUP_ID: "snowflake-connector-v3-group"
-      # Separate internal bookkeeping topics from V4 cluster
-      CONNECT_CONFIG_STORAGE_TOPIC: "_connect-v3-configs"
-      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: "1"
-      CONNECT_OFFSET_STORAGE_TOPIC: "_connect-v3-offsets"
-      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: "1"
-      CONNECT_STATUS_STORAGE_TOPIC: "_connect-v3-status"
-      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: "1"
-      CONNECT_KEY_CONVERTER: "org.apache.kafka.connect.storage.StringConverter"
-      CONNECT_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
-      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
-      CONNECT_PLUGIN_PATH: "/usr/share/java,/usr/share/confluent-hub-components"
-      SNOWFLAKE_URL: "${SNOWFLAKE_URL}"
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:29092"
+      KAFKA_TOPIC: "payments.auth"
+      KAFKA_GROUP_ID: "snowflake-fallback-relay"
+      BATCH_SIZE: "500"
+      BATCH_TIMEOUT: "3.0"
+      SNOWFLAKE_ACCOUNT: "${SNOWFLAKE_ACCOUNT}"
       SNOWFLAKE_USER: "${SNOWFLAKE_USER}"
       SNOWFLAKE_PRIVATE_KEY: "${SNOWFLAKE_PRIVATE_KEY}"
-      CONNECT_CONFIG_PROVIDERS: "env"
-      CONNECT_CONFIG_PROVIDERS_ENV_CLASS: "org.apache.kafka.common.config.provider.EnvVarConfigProvider"
+      SNOWFLAKE_DATABASE: "PAYMENTS_DB"
+      SNOWFLAKE_SCHEMA: "RAW"
+      SNOWFLAKE_WAREHOUSE: "PAYMENTS_ADMIN_WH"
+      SNOWFLAKE_ROLE: "PAYMENTS_INGEST_ROLE"
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -136,11 +128,6 @@ services:
       # Kafka connection — use internal listener for container-to-container traffic
       KAFKA_BOOTSTRAP_SERVERS: "kafka:29092"
       KAFKA_TOPIC: "payments.auth"
-      # Generator defaults (can be changed via API).
-      # 50000 rps exceeds V3 Classic's single-task Java SDK ceiling. V4 HP
-      # (tasks.max=4, Rust client) handles 12,500 rps/task with ease; V3
-      # (tasks.max=1, Java SDK) accumulates unbounded Kafka consumer lag,
-      # making the throughput and pipeline-lag gap visible in the dashboard.
       GENERATOR_RATE: "50000"
       GENERATOR_ENV: "dev"
     depends_on:

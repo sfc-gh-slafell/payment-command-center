@@ -71,6 +71,7 @@ def _create_connection(
         "schema": schema,
         "warehouse": warehouse,
         "role": SNOWFLAKE_ROLE,
+        "timezone": "UTC",
     }
     if SNOWFLAKE_HOST:
         base_params["host"] = SNOWFLAKE_HOST
